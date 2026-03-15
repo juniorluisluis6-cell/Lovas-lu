@@ -1,0 +1,8 @@
+{
+  "name": "LOVAS - Fashion Social Network",
+  "description": "A modern fashion social network to share looks, explore trends, and connect with stylists.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

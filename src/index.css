@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --color-fashion-pink: #FF1493;
+  --color-fashion-gold: #D4AF37;
+  --color-fashion-black: #050505;
+  --color-fashion-white: #FFFFFF;
+  
+  --font-display: 'Playfair Display', serif;
+  --font-sans: 'Inter', sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-fashion-black text-fashion-white font-sans;
+  }
+}
+
+.gold-gradient {
+  background: linear-gradient(45deg, #D4AF37, #F9E29C, #D4AF37);
+}
+
+.pink-glow {
+  box-shadow: 0 0 15px rgba(255, 20, 147, 0.4);
+}
