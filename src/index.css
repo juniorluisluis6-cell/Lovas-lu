@@ -1,10 +1,11 @@
 @import "tailwindcss";
 
 @theme {
-  --color-fashion-pink: #FF1493;
   --color-fashion-gold: #D4AF37;
+  --color-fashion-gold-light: #F9E29C;
   --color-fashion-black: #050505;
   --color-fashion-white: #FFFFFF;
+  --color-fashion-zinc: #18181b;
   
   --font-display: 'Playfair Display', serif;
   --font-sans: 'Inter', sans-serif;
@@ -20,6 +21,24 @@
   background: linear-gradient(45deg, #D4AF37, #F9E29C, #D4AF37);
 }
 
-.pink-glow {
-  box-shadow: 0 0 15px rgba(255, 20, 147, 0.4);
+.gold-text-gradient {
+  background: linear-gradient(45deg, #D4AF37, #F9E29C, #D4AF37);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-glow {
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.4);
+}
+
+.premium-card {
+  @apply bg-fashion-zinc/50 border border-fashion-gold/20 rounded-3xl backdrop-blur-xl;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

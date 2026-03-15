@@ -1,6 +1,6 @@
 {
-  "name": "LOVAS - Fashion Social Network",
-  "description": "A modern fashion social network to share looks, explore trends, and connect with stylists.",
+  "name": "BIG LOVA-FASHION",
+  "description": "Plataforma Premium de Moda + Rede Social Exclusiva. Onde a moda encontra o luxo.",
   "requestFramePermissions": [
     "camera",
     "microphone"
