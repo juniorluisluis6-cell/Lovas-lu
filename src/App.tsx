@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
-import { Profile, Post, Message, Story, PremiumData } from './types';
+import { Profile, Post, Message, Story, PremiumData, Reel, Like, Comment as CommentType } from './types';
 import { 
   Heart, 
   MessageCircle, 
@@ -36,7 +36,20 @@ import {
   X,
   Trophy,
   ThumbsUp,
-  Star
+  Star,
+  Play,
+  Music,
+  FileText,
+  RotateCcw,
+  RefreshCw,
+  Trash2,
+  Ban,
+  BarChart3,
+  Megaphone,
+  PhoneOff,
+  Plus,
+  Upload,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -77,18 +90,238 @@ const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
   );
 };
 
+const PasswordRecovery = ({ onBack }: { onBack: () => void }) => {
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [step, setStep] = useState<'phone' | 'code' | 'new'>('phone');
+  const [loading, setLoading] = useState(false);
+
+  const handleSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    // Simulate SMS sending
+    setTimeout(() => {
+      setStep('code');
+      setLoading(false);
+    }, 1500);
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setTimeout(() => {
+      setStep('new');
+      setLoading(false);
+    }, 1000);
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    // In a real app, use supabase.auth.updateUser({ password: newPassword })
+    setTimeout(() => {
+      alert('Palavra-passe redefinida com sucesso!');
+      onBack();
+    }, 1500);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-2xl font-display font-bold gold-text-gradient">Recuperar Conta</h2>
+        <p className="text-zinc-500 text-xs mt-2 uppercase tracking-widest">Siga os passos abaixo</p>
+      </div>
+
+      {step === 'phone' && (
+        <form onSubmit={handleSendCode} className="space-y-4">
+          <div className="relative">
+            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
+            <input
+              type="text"
+              placeholder="Número de telefone"
+              className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              required
+            />
+          </div>
+          <button type="submit" disabled={loading} className="w-full gold-gradient text-fashion-black font-bold py-4 rounded-2xl gold-glow disabled:opacity-50">
+            {loading ? 'Enviando...' : 'Enviar Código SMS'}
+          </button>
+        </form>
+      )}
+
+      {step === 'code' && (
+        <form onSubmit={handleVerifyCode} className="space-y-4">
+          <div className="relative">
+            <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
+            <input
+              type="text"
+              placeholder="Código de Verificação"
+              className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all text-center tracking-[1em]"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              required
+            />
+          </div>
+          <button type="submit" disabled={loading} className="w-full gold-gradient text-fashion-black font-bold py-4 rounded-2xl gold-glow disabled:opacity-50">
+            {loading ? 'Verificando...' : 'Verificar Código'}
+          </button>
+        </form>
+      )}
+
+      {step === 'new' && (
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <div className="relative">
+            <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
+            <input
+              type="password"
+              placeholder="Nova Palavra-passe"
+              className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+            />
+          </div>
+          <button type="submit" disabled={loading} className="w-full gold-gradient text-fashion-black font-bold py-4 rounded-2xl gold-glow disabled:opacity-50">
+            {loading ? 'Redefinindo...' : 'Redefinir Palavra-passe'}
+          </button>
+        </form>
+      )}
+
+      <button onClick={onBack} className="w-full text-zinc-500 text-sm hover:text-fashion-gold transition-colors">
+        Voltar ao Login
+      </button>
+    </div>
+  );
+};
+
+const ProfileEdit = ({ profile, onComplete }: { profile: Profile | null, onComplete: () => void }) => {
+  const [fullName, setFullName] = useState(profile?.full_name || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
+  const [address, setAddress] = useState(profile?.address || '');
+  const [loading, setLoading] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
+  const [file, setFile] = useState<File | null>(null);
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    let finalAvatarUrl = avatarUrl;
+    if (file) {
+      // In a real app, upload to Supabase Storage
+      finalAvatarUrl = URL.createObjectURL(file);
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: fullName,
+        phone,
+        address,
+        avatar_url: finalAvatarUrl
+      })
+      .eq('id', profile?.id);
+
+    setLoading(false);
+    if (!error) {
+      alert('Perfil atualizado com sucesso!');
+      onComplete();
+    } else {
+      alert('Erro ao atualizar perfil');
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setAvatarUrl(URL.createObjectURL(selectedFile));
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-lg mx-auto space-y-8 pb-24">
+      <div className="text-center">
+        <div className="relative inline-block">
+          <div className="w-32 h-32 rounded-full gold-gradient p-1">
+            <img 
+              src={avatarUrl || `https://picsum.photos/seed/${profile?.id}/200/200`} 
+              className="w-full h-full rounded-full object-cover border-4 border-fashion-black"
+              alt=""
+            />
+          </div>
+          <label className="absolute bottom-0 right-0 bg-fashion-gold text-fashion-black p-2 rounded-full gold-glow cursor-pointer">
+            <Camera size={20} />
+            <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+          </label>
+        </div>
+        <h2 className="text-2xl font-display font-bold mt-4 gold-text-gradient">Editar Perfil</h2>
+      </div>
+
+      <form onSubmit={handleUpdate} className="space-y-4">
+        <div className="space-y-1">
+          <label className="text-[10px] uppercase tracking-widest text-zinc-500 ml-2">Nome Completo</label>
+          <input 
+            type="text" 
+            className="w-full bg-zinc-900 border border-white/10 rounded-2xl px-4 py-3 focus:border-fashion-gold outline-none text-sm"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] uppercase tracking-widest text-zinc-500 ml-2">Número de Telefone</label>
+          <input 
+            type="tel" 
+            className="w-full bg-zinc-900 border border-white/10 rounded-2xl px-4 py-3 focus:border-fashion-gold outline-none text-sm"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] uppercase tracking-widest text-zinc-500 ml-2">Endereço</label>
+          <input 
+            type="text" 
+            className="w-full bg-zinc-900 border border-white/10 rounded-2xl px-4 py-3 focus:border-fashion-gold outline-none text-sm"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+        </div>
+
+        <button 
+          type="submit" 
+          disabled={loading}
+          className="w-full gold-gradient py-4 rounded-2xl text-fashion-black font-bold gold-glow mt-6 disabled:opacity-50"
+        >
+          {loading ? 'Salvando...' : 'Salvar Alterações'}
+        </button>
+      </form>
+
+      <div className="pt-6 border-t border-white/5">
+        <button className="w-full bg-zinc-900/50 py-4 rounded-2xl text-zinc-400 text-sm flex items-center justify-center gap-2">
+          <Lock size={16} />
+          Alterar Palavra-passe
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const Auth = () => {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState(1);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      // Using email as a proxy for phone in this environment for Supabase Auth simplicity
       const email = `${phone.replace(/\D/g, '')}@biglova.com`;
       
       if (isSignUp) {
@@ -116,9 +349,22 @@ const Auth = () => {
     }
   };
 
+  const handleRecovery = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (recoveryStep === 1) {
+      alert('Código de recuperação enviado para ' + phone);
+      setRecoveryStep(2);
+    } else if (recoveryStep === 2) {
+      setRecoveryStep(3);
+    } else {
+      alert('Palavra-passe redefinida com sucesso!');
+      setIsRecovering(false);
+      setRecoveryStep(1);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-fashion-black p-4 relative overflow-hidden">
-      {/* Background Glow */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-fashion-gold/10 blur-[120px] rounded-full" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-fashion-gold/10 blur-[120px] rounded-full" />
 
@@ -132,103 +378,292 @@ const Auth = () => {
           <p className="text-zinc-500 text-xs uppercase tracking-widest">Acesso Exclusivo</p>
         </div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          {isSignUp && (
-            <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
-              <input
-                type="text"
-                placeholder="Nome Completo"
-                className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
+        {isRecovering ? (
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-xl font-display font-bold text-white">Recuperação</h2>
+              <p className="text-xs text-zinc-500 mt-1">
+                {recoveryStep === 1 && "Insira seu número para receber o código"}
+                {recoveryStep === 2 && "Insira o código enviado por SMS"}
+                {recoveryStep === 3 && "Crie sua nova palavra-passe"}
+              </p>
             </div>
-          )}
-          <div className="relative">
-            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
-            <input
-              type="text"
-              placeholder="Número de telefone"
-              className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-            />
+            <form onSubmit={handleRecovery} className="space-y-4">
+              {recoveryStep === 1 && (
+                <input 
+                  type="tel" placeholder="Número de telefone" required
+                  className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-6 py-4 focus:border-fashion-gold outline-none"
+                  value={phone} onChange={(e) => setPhone(e.target.value)}
+                />
+              )}
+              {recoveryStep === 2 && (
+                <input 
+                  type="text" placeholder="Código SMS" required
+                  className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-6 py-4 focus:border-fashion-gold outline-none text-center tracking-widest"
+                />
+              )}
+              {recoveryStep === 3 && (
+                <input 
+                  type="password" placeholder="Nova Palavra-passe" required
+                  className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-6 py-4 focus:border-fashion-gold outline-none"
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                />
+              )}
+              <button type="submit" className="w-full gold-gradient py-4 rounded-2xl text-fashion-black font-bold gold-glow">
+                {recoveryStep === 1 ? "Enviar Código" : recoveryStep === 2 ? "Verificar Código" : "Redefinir Senha"}
+              </button>
+            </form>
+            <button onClick={() => setIsRecovering(false)} className="w-full text-zinc-500 text-sm">Voltar ao Login</button>
           </div>
-          <div className="relative">
-            <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
-            <input
-              type="password"
-              placeholder="Palavra-passe"
-              className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
+        ) : (
+          <>
+            <form onSubmit={handleAuth} className="space-y-4">
+              {isSignUp && (
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Nome Completo"
+                    className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
+              <div className="relative">
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
+                <input
+                  type="text"
+                  placeholder="Número de telefone"
+                  className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="relative">
+                <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-fashion-gold/50" size={18} />
+                <input
+                  type="password"
+                  placeholder="Palavra-passe"
+                  className="w-full bg-fashion-black/50 border border-white/10 rounded-2xl px-12 py-4 focus:border-fashion-gold outline-none transition-all"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full gold-gradient text-fashion-black font-bold py-4 rounded-2xl transition-all gold-glow disabled:opacity-50 uppercase tracking-widest text-sm"
-          >
-            {loading ? 'Processando...' : isSignUp ? 'Criar Conta' : 'Entrar'}
-          </button>
-        </form>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full gold-gradient text-fashion-black font-bold py-4 rounded-2xl transition-all gold-glow disabled:opacity-50 uppercase tracking-widest text-sm"
+              >
+                {loading ? 'Processando...' : isSignUp ? 'Criar Conta' : 'Entrar'}
+              </button>
+            </form>
 
-        <div className="mt-8 space-y-4 text-center">
-          <button 
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-zinc-400 text-sm hover:text-fashion-gold transition-colors block w-full"
-          >
-            {isSignUp ? 'Já tem uma conta? Entrar' : 'Não tem conta? Criar conta'}
-          </button>
-          {!isSignUp && (
-            <button className="text-zinc-500 text-xs hover:text-fashion-gold transition-colors">
-              Esqueci palavra-passe
-            </button>
-          )}
-        </div>
+            <div className="mt-8 space-y-4 text-center">
+              <button 
+                onClick={() => setIsSignUp(!isSignUp)}
+                className="text-zinc-400 text-sm hover:text-fashion-gold transition-colors block w-full"
+              >
+                {isSignUp ? 'Já tem uma conta? Entrar' : 'Não tem conta? Criar conta'}
+              </button>
+              {!isSignUp && (
+                <button 
+                  onClick={() => setIsRecovering(true)}
+                  className="text-zinc-500 text-xs hover:text-fashion-gold transition-colors"
+                >
+                  Esqueci palavra-passe
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </motion.div>
     </div>
   );
 };
 
 const Stories = () => {
+  const [stories, setStories] = useState<Story[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStories = async () => {
+      const { data } = await supabase
+        .from('stories')
+        .select('*, profiles(*)')
+        .order('created_at', { ascending: false });
+      setStories(data || []);
+      setLoading(false);
+    };
+    fetchStories();
+  }, []);
+
+  const handleAddStory = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const user = (await supabase.auth.getUser()).data.user;
+    if (!user) return;
+
+    // Simulate upload
+    const imageUrl = URL.createObjectURL(file);
+    
+    const { error } = await supabase.from('stories').insert({
+      user_id: user.id,
+      image_url: imageUrl
+    });
+
+    if (!error) {
+      alert('Story publicado!');
+      // Refresh
+      const { data } = await supabase.from('stories').select('*, profiles(*)').order('created_at', { ascending: false });
+      setStories(data || []);
+    }
+  };
+
   return (
     <div className="flex gap-4 overflow-x-auto pb-4 pt-2 px-4 scrollbar-hide">
-      <div className="flex flex-col items-center gap-1 shrink-0">
+      <label className="flex flex-col items-center gap-1 shrink-0 cursor-pointer">
         <div className="w-16 h-16 rounded-full border-2 border-dashed border-fashion-gold/50 flex items-center justify-center p-1">
           <div className="w-full h-full rounded-full bg-zinc-900 flex items-center justify-center text-fashion-gold">
             <PlusSquare size={24} />
           </div>
         </div>
         <span className="text-[10px] text-zinc-500">Seu Story</span>
-      </div>
-      {[1,2,3,4,5].map(i => (
-        <div key={i} className="flex flex-col items-center gap-1 shrink-0">
+        <input type="file" className="hidden" accept="image/*,video/*" onChange={handleAddStory} />
+      </label>
+      
+      {loading ? (
+        [1,2,3].map(i => (
+          <div key={i} className="w-16 h-16 rounded-full bg-zinc-900 animate-pulse shrink-0" />
+        ))
+      ) : stories.map(story => (
+        <div key={story.id} className="flex flex-col items-center gap-1 shrink-0">
           <div className="w-16 h-16 rounded-full gold-gradient p-[2px]">
             <div className="w-full h-full rounded-full bg-fashion-black p-1">
               <img 
-                src={`https://picsum.photos/seed/model${i}/100/100`} 
-                alt="" 
+                src={story.image_url} 
                 className="w-full h-full rounded-full object-cover"
+                alt=""
                 referrerPolicy="no-referrer"
               />
             </div>
           </div>
-          <span className="text-[10px] text-zinc-400">Model {i}</span>
+          <span className="text-[10px] text-zinc-500 truncate w-16 text-center">
+            {story.profiles?.username}
+          </span>
         </div>
       ))}
     </div>
   );
 };
 
+const CommentModal = ({ postId, onClose }: { postId: string, onClose: () => void }) => {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchComments = async () => {
+      const { data } = await supabase
+        .from('comments')
+        .select('*, profiles(*)')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+      setComments(data || []);
+      setLoading(false);
+    };
+    fetchComments();
+  }, [postId]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+
+    const user = (await supabase.auth.getUser()).data.user;
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('comments')
+      .insert({
+        post_id: postId,
+        user_id: user.id,
+        content: newComment
+      })
+      .select('*, profiles(*)')
+      .single();
+
+    if (!error && data) {
+      setComments([...comments, data]);
+      setNewComment('');
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ y: '100%' }}
+      animate={{ y: 0 }}
+      exit={{ y: '100%' }}
+      className="fixed inset-0 z-[150] bg-fashion-black flex flex-col"
+    >
+      <div className="p-4 border-b border-white/5 flex items-center justify-between">
+        <h3 className="font-display font-bold gold-text-gradient">Comentários</h3>
+        <button onClick={onClose} className="p-2 text-zinc-500"><X size={24} /></button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {loading ? (
+          <div className="text-center py-10"><Sparkles className="animate-spin text-fashion-gold mx-auto" /></div>
+        ) : comments.length > 0 ? comments.map((comment) => (
+          <div key={comment.id} className="flex gap-3">
+            <img 
+              src={comment.profiles?.avatar_url || `https://picsum.photos/seed/${comment.user_id}/100/100`} 
+              className="w-8 h-8 rounded-full"
+              alt=""
+            />
+            <div className="flex-1">
+              <div className="bg-zinc-900/50 p-3 rounded-2xl">
+                <p className="text-[10px] font-bold text-fashion-gold mb-1">@{comment.profiles?.username}</p>
+                <p className="text-xs text-zinc-300">{comment.content}</p>
+              </div>
+              <p className="text-[8px] text-zinc-600 mt-1 ml-2">
+                {new Date(comment.created_at).toLocaleDateString()}
+              </p>
+            </div>
+          </div>
+        )) : (
+          <div className="text-center py-20 text-zinc-600">
+            <MessageCircle size={48} className="mx-auto mb-4 opacity-20" />
+            <p>Seja o primeiro a comentar!</p>
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={handleSend} className="p-4 border-t border-white/5 bg-zinc-900/50 flex gap-2">
+        <input
+          type="text"
+          placeholder="Adicione um comentário..."
+          className="flex-1 bg-fashion-black border border-white/10 rounded-full px-4 py-3 text-sm focus:border-fashion-gold outline-none"
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+        />
+        <button type="submit" className="bg-fashion-gold text-fashion-black p-3 rounded-full gold-glow">
+          <Send size={20} />
+        </button>
+      </form>
+    </motion.div>
+  );
+};
+
 const Feed = ({ profile }: { profile: Profile | null }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchPosts = async () => {
@@ -239,14 +674,70 @@ const Feed = ({ profile }: { profile: Profile | null }) => {
       setPosts(data || []);
       setLoading(false);
     };
+
+    const fetchLikes = async () => {
+      if (!profile) return;
+      const { data } = await supabase
+        .from('likes')
+        .select('post_id')
+        .eq('user_id', profile.id);
+      if (data) setLikedPosts(new Set(data.map(l => l.post_id!)));
+    };
+
     fetchPosts();
-  }, []);
+    fetchLikes();
+  }, [profile]);
+
+  const toggleLike = async (postId: string) => {
+    if (!profile) return;
+
+    const isLiked = likedPosts.has(postId);
+    const newLikedPosts = new Set(likedPosts);
+
+    if (isLiked) {
+      newLikedPosts.delete(postId);
+      await supabase.from('likes').delete().eq('user_id', profile.id).eq('post_id', postId);
+      await supabase.rpc('decrement_likes', { post_id_param: postId });
+    } else {
+      newLikedPosts.add(postId);
+      await supabase.from('likes').insert({ user_id: profile.id, post_id: postId });
+      await supabase.rpc('increment_likes', { post_id_param: postId });
+    }
+
+    setLikedPosts(newLikedPosts);
+    setPosts(posts.map(p => p.id === postId ? { ...p, likes_count: p.likes_count + (isLiked ? -1 : 1) } : p));
+  };
+
+  const handleShare = async (post: Post) => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'BIG LOVA-FASHION',
+          text: `Confira este post de @${post.profiles?.username}: ${post.caption}`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      alert('Link copiado para a área de transferência!');
+    }
+  };
 
   if (loading) return <div className="p-10 text-center"><Sparkles className="animate-spin text-fashion-gold mx-auto" /></div>;
 
   return (
     <div className="space-y-4 pb-24">
       <Stories />
+      
+      <AnimatePresence>
+        {activeCommentPost && (
+          <CommentModal 
+            postId={activeCommentPost} 
+            onClose={() => setActiveCommentPost(null)} 
+          />
+        )}
+      </AnimatePresence>
       
       {posts.length === 0 ? (
         <div className="p-10 text-center text-zinc-500">
@@ -303,9 +794,24 @@ const Feed = ({ profile }: { profile: Profile | null }) => {
             <div className="p-4">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex gap-4">
-                  <button className="hover:text-fashion-gold transition-colors"><Heart size={24} /></button>
-                  <button className="hover:text-fashion-gold transition-colors"><MessageCircle size={24} /></button>
-                  <button className="hover:text-fashion-gold transition-colors"><Share2 size={24} /></button>
+                  <button 
+                    onClick={() => toggleLike(post.id)}
+                    className={`transition-all ${likedPosts.has(post.id) ? 'text-red-500 scale-125' : 'hover:text-fashion-gold'}`}
+                  >
+                    <Heart size={24} fill={likedPosts.has(post.id) ? 'currentColor' : 'none'} />
+                  </button>
+                  <button 
+                    onClick={() => setActiveCommentPost(post.id)}
+                    className="hover:text-fashion-gold transition-colors"
+                  >
+                    <MessageCircle size={24} />
+                  </button>
+                  <button 
+                    onClick={() => handleShare(post)}
+                    className="hover:text-fashion-gold transition-colors"
+                  >
+                    <Share2 size={24} />
+                  </button>
                 </div>
                 <div className="flex gap-1">
                   <div className="w-1.5 h-1.5 rounded-full bg-fashion-gold" />
@@ -313,6 +819,7 @@ const Feed = ({ profile }: { profile: Profile | null }) => {
                   <div className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
                 </div>
               </div>
+              <p className="text-xs font-bold mb-2">{post.likes_count} curtidas</p>
               <p className="text-sm">
                 <span className="font-bold mr-2">{post.profiles?.full_name}</span>
                 {post.caption}
@@ -322,6 +829,12 @@ const Feed = ({ profile }: { profile: Profile | null }) => {
                   <span key={tag} className="text-xs text-fashion-gold">#{tag}</span>
                 ))}
               </div>
+              <button 
+                onClick={() => setActiveCommentPost(post.id)}
+                className="text-[10px] text-zinc-500 mt-3 uppercase tracking-widest hover:text-fashion-gold transition-colors"
+              >
+                Ver todos os comentários
+              </button>
             </div>
           </motion.div>
         ))
@@ -466,6 +979,9 @@ const PremiumForm = ({ onComplete }: { onComplete: () => void }) => {
 
 const VideoCall = ({ onEnd }: { onEnd: () => void }) => {
   const [timer, setTimer] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
 
   useEffect(() => {
     const interval = setInterval(() => setTimer(t => t + 1), 1000);
@@ -475,7 +991,7 @@ const VideoCall = ({ onEnd }: { onEnd: () => void }) => {
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60);
     const secs = s % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -485,14 +1001,15 @@ const VideoCall = ({ onEnd }: { onEnd: () => void }) => {
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[200] bg-fashion-black flex flex-col"
     >
-      {/* Remote Video (Placeholder) */}
-      <div className="flex-1 relative bg-zinc-900 overflow-hidden">
+      <div className="relative flex-1">
+        {/* Remote Video (Mock) */}
         <img 
           src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=1000" 
-          alt="Remote User" 
           className="w-full h-full object-cover opacity-50"
+          alt=""
           referrerPolicy="no-referrer"
         />
+        
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <div className="w-24 h-24 rounded-full gold-gradient p-1 mb-4">
             <div className="w-full h-full rounded-full bg-fashion-black flex items-center justify-center">
@@ -505,25 +1022,48 @@ const VideoCall = ({ onEnd }: { onEnd: () => void }) => {
 
         {/* Local Video (Small Overlay) */}
         <div className="absolute top-6 right-6 w-32 aspect-[3/4] bg-zinc-800 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
-          <div className="w-full h-full flex items-center justify-center bg-zinc-900">
-            <User size={24} className="text-zinc-700" />
-          </div>
+          {!isCameraOff ? (
+            <img 
+              src="https://picsum.photos/seed/me/400/600" 
+              className={`w-full h-full object-cover ${!isFrontCamera ? 'scale-x-[-1]' : ''}`}
+              alt=""
+            />
+          ) : (
+            <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
+              <VideoOff size={24} className="text-zinc-700" />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Controls */}
-      <div className="p-10 bg-gradient-to-t from-black to-transparent flex justify-center gap-6">
-        <button className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-white hover:bg-zinc-700 transition-colors">
-          <MicOff size={24} />
+      <div className="p-10 bg-gradient-to-t from-black to-transparent flex justify-center items-center gap-6">
+        <button 
+          onClick={() => setIsMuted(!isMuted)}
+          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isMuted ? 'bg-red-500 text-white' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
+        >
+          {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
         </button>
+        
         <button 
           onClick={onEnd}
-          className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white gold-glow hover:bg-red-600 transition-colors"
+          className="w-20 h-20 rounded-full bg-red-600 flex items-center justify-center text-white gold-glow shadow-2xl hover:bg-red-700 transition-colors"
         >
-          <Phone size={24} className="rotate-[135deg]" />
+          <PhoneOff size={32} />
         </button>
-        <button className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-white hover:bg-zinc-700 transition-colors">
-          <VideoOff size={24} />
+
+        <button 
+          onClick={() => setIsCameraOff(!isCameraOff)}
+          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isCameraOff ? 'bg-red-500 text-white' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
+        >
+          {isCameraOff ? <VideoOff size={24} /> : <Video size={24} />}
+        </button>
+
+        <button 
+          onClick={() => setIsFrontCamera(!isFrontCamera)}
+          className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center text-white hover:bg-zinc-700"
+        >
+          <RefreshCw size={24} />
         </button>
       </div>
     </motion.div>
@@ -616,6 +1156,9 @@ const Ranking = () => {
 const Chat = ({ profile, onCall }: { profile: Profile | null, onCall: () => void }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -624,6 +1167,7 @@ const Chat = ({ profile, onCall }: { profile: Profile | null, onCall: () => void
         .select('*, sender:profiles(*)')
         .order('created_at', { ascending: true });
       setMessages(data || []);
+      setLoading(false);
     };
     fetchMessages();
 
@@ -637,30 +1181,54 @@ const Chat = ({ profile, onCall }: { profile: Profile | null, onCall: () => void
     return () => { sub.unsubscribe(); };
   }, []);
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !profile) return;
+  const sendMessage = async (type: Message['type'] = 'text', mediaUrl?: string) => {
+    if ((!newMessage.trim() && !mediaUrl) || !profile) return;
 
     if (profile.account_type === 'normal') {
       alert('Apenas membros PREMIUM podem usar o chat.');
       return;
     }
 
-    const { error } = await supabase
-      .from('messages')
-      .insert({
-        sender_id: profile.id,
-        receiver_id: '00000000-0000-0000-0000-000000000000', // Global
-        content: newMessage,
-        type: 'text'
-      });
+    const messageData = {
+      sender_id: profile.id,
+      receiver_id: '00000000-0000-0000-0000-000000000000', // Global
+      content: type === 'text' ? newMessage : null,
+      type,
+      media_url: mediaUrl || null
+    };
 
-    if (error) console.error(error);
+    // Optimistic update
+    const tempId = Math.random().toString();
+    const optimisticMsg: Message = { ...messageData, id: tempId, created_at: new Date().toISOString(), is_read: false };
+    setMessages(prev => [...prev, optimisticMsg]);
     setNewMessage('');
+
+    const { error } = await supabase.from('messages').insert(messageData);
+    if (error) {
+      alert('Erro ao enviar mensagem');
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+    }
+  };
+
+  const handleFileUpload = async (type: Message['type']) => {
+    setUploading(true);
+    // Simulate file upload
+    setTimeout(() => {
+      const mockUrl = type === 'photo' ? 'https://picsum.photos/800/600' : 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+      sendMessage(type, mockUrl);
+      setUploading(false);
+    }, 1000);
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      sendMessage('audio', 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
+    }
+    setIsRecording(!isRecording);
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] max-w-2xl mx-auto">
+    <div className="flex flex-col h-[calc(100vh-140px)] max-w-2xl mx-auto bg-fashion-black">
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender_id === profile?.id ? 'justify-end' : 'justify-start'}`}>
@@ -669,7 +1237,25 @@ const Chat = ({ profile, onCall }: { profile: Profile | null, onCall: () => void
                 <p className="text-[10px] font-bold opacity-70">@{msg.sender?.username || 'user'}</p>
                 {msg.sender?.account_type === 'premium' && <Crown size={10} />}
               </div>
-              <p className="text-sm">{msg.content}</p>
+              
+              {msg.type === 'text' && <p className="text-sm">{msg.content}</p>}
+              {msg.type === 'photo' && <img src={msg.media_url!} className="rounded-lg max-w-full" alt="" />}
+              {msg.type === 'audio' && (
+                <div className="flex items-center gap-2 min-w-[150px]">
+                  <Play size={16} />
+                  <div className="flex-1 h-1 bg-black/20 rounded-full overflow-hidden">
+                    <div className="w-1/3 h-full bg-current" />
+                  </div>
+                  <span className="text-[10px]">0:12</span>
+                </div>
+              )}
+              {msg.type === 'document' && (
+                <div className="flex items-center gap-2 bg-black/10 p-2 rounded-lg">
+                  <FileText size={20} />
+                  <span className="text-xs truncate">Documento.pdf</span>
+                </div>
+              )}
+
               <div className="flex justify-end gap-1 mt-1 opacity-50">
                 <span className="text-[8px]">{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                 <CheckCircle2 size={10} />
@@ -677,74 +1263,255 @@ const Chat = ({ profile, onCall }: { profile: Profile | null, onCall: () => void
             </div>
           </div>
         ))}
+        {uploading && (
+          <div className="flex justify-end">
+            <div className="bg-fashion-gold/20 p-3 rounded-2xl animate-pulse flex items-center gap-2">
+              <Sparkles size={16} className="text-fashion-gold animate-spin" />
+              <span className="text-xs text-fashion-gold">Enviando arquivo...</span>
+            </div>
+          </div>
+        )}
       </div>
 
-      <form onSubmit={sendMessage} className="p-4 bg-fashion-zinc/50 border-t border-white/5 flex gap-2">
-        <button 
-          type="button" 
-          onClick={onCall}
-          className="p-2 text-zinc-500 hover:text-fashion-gold"
-        >
-          <Video size={24} />
-        </button>
-        <button type="button" className="p-2 text-zinc-500 hover:text-fashion-gold"><Mic size={24} /></button>
-        <input
-          type="text"
-          placeholder="Digite uma mensagem..."
-          className="flex-1 bg-fashion-black border border-white/10 rounded-2xl px-4 py-2 focus:border-fashion-gold outline-none"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-        />
-        <button type="submit" className="bg-fashion-gold p-3 rounded-2xl gold-glow text-fashion-black">
-          <Send size={20} />
-        </button>
-      </form>
+      <div className="p-4 bg-fashion-zinc/50 border-t border-white/5">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <button onClick={() => handleFileUpload('photo')} className="p-2 text-zinc-500 hover:text-fashion-gold"><Camera size={20} /></button>
+            <button onClick={() => handleFileUpload('document')} className="p-2 text-zinc-500 hover:text-fashion-gold"><Plus size={20} /></button>
+            <button onClick={onCall} className="p-2 text-zinc-500 hover:text-fashion-gold"><Video size={20} /></button>
+          </div>
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              placeholder="Digite uma mensagem..."
+              className="w-full bg-fashion-black border border-white/10 rounded-2xl px-4 py-2 focus:border-fashion-gold outline-none text-sm"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+            />
+          </div>
+          <button 
+            onClick={toggleRecording}
+            className={`p-3 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-fashion-gold text-fashion-black'}`}
+          >
+            {isRecording ? <MicOff size={20} /> : newMessage.trim() ? <Send size={20} onClick={() => sendMessage()} /> : <Mic size={20} />}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
 
 const AdminPanel = () => {
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [stats, setStats] = useState({ total: 0, premium: 0, verified: 0 });
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'stats' | 'users'>('stats');
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    if (profiles) {
+      setUsers(profiles);
+      setStats({
+        total: profiles.length,
+        premium: profiles.filter(u => u.account_type === 'premium').length,
+        verified: profiles.filter(u => u.is_verified).length
+      });
+    }
+    setLoading(false);
+  };
+
+  const toggleVerify = async (userId: string, current: boolean) => {
+    await supabase.from('profiles').update({ is_verified: !current }).eq('id', userId);
+    fetchData();
+  };
+
+  const deleteUser = async (userId: string) => {
+    if (confirm('Tem certeza que deseja remover este usuário?')) {
+      await supabase.from('profiles').delete().eq('id', userId);
+      fetchData();
+    }
+  };
+
+  const makeAdmin = async (userId: string) => {
+    if (confirm('Deseja tornar este usuário um Administrador?')) {
+      await supabase.from('profiles').update({ account_type: 'admin' }).eq('id', userId);
+      fetchData();
+    }
+  };
+
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-4 mb-8">
-        <ShieldCheck size={40} className="text-fashion-gold" />
-        <h2 className="text-3xl font-display font-bold gold-text-gradient">Painel do Administrador</h2>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="premium-card p-6 text-center">
-          <p className="text-3xl font-bold text-fashion-gold">124</p>
-          <p className="text-xs text-zinc-500 uppercase tracking-widest mt-2">Usuários Totais</p>
+    <div className="p-6 max-w-4xl mx-auto space-y-6 pb-24">
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <ShieldCheck size={40} className="text-fashion-gold" />
+          <h2 className="text-3xl font-display font-bold gold-text-gradient">Painel Admin</h2>
         </div>
-        <div className="premium-card p-6 text-center">
-          <p className="text-3xl font-bold text-fashion-gold">42</p>
-          <p className="text-xs text-zinc-500 uppercase tracking-widest mt-2">Membros Premium</p>
+        <div className="flex gap-2">
+          <button onClick={() => setView('stats')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${view === 'stats' ? 'bg-fashion-gold text-fashion-black' : 'bg-zinc-900 text-zinc-500'}`}>Estatísticas</button>
+          <button onClick={() => setView('users')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${view === 'users' ? 'bg-fashion-gold text-fashion-black' : 'bg-zinc-900 text-zinc-500'}`}>Usuários</button>
         </div>
       </div>
 
-      <div className="space-y-2">
-        <button className="w-full bg-zinc-900 border border-white/10 p-4 rounded-2xl flex items-center justify-between hover:border-fashion-gold transition-all">
-          <div className="flex items-center gap-3">
-            <User size={20} className="text-fashion-gold" />
-            <span className="text-sm">Gerenciar Usuários</span>
+      {view === 'stats' ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="premium-card p-6 text-center">
+            <p className="text-4xl font-display font-bold text-fashion-gold">{stats.total}</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-2">Usuários Totais</p>
           </div>
-          <ChevronRight size={18} />
-        </button>
-        <button className="w-full bg-zinc-900 border border-white/10 p-4 rounded-2xl flex items-center justify-between hover:border-fashion-gold transition-all">
-          <div className="flex items-center gap-3">
-            <AlertCircle size={20} className="text-fashion-gold" />
-            <span className="text-sm">Conteúdos Denunciados</span>
+          <div className="premium-card p-6 text-center">
+            <p className="text-4xl font-display font-bold text-fashion-gold">{stats.premium}</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-2">Membros Premium</p>
           </div>
-          <ChevronRight size={18} />
-        </button>
-        <button className="w-full bg-zinc-900 border border-white/10 p-4 rounded-2xl flex items-center justify-between hover:border-fashion-gold transition-all">
-          <div className="flex items-center gap-3">
-            <Send size={20} className="text-fashion-gold" />
-            <span className="text-sm">Enviar Anúncio Geral</span>
+          <div className="premium-card p-6 text-center">
+            <p className="text-4xl font-display font-bold text-fashion-gold">{stats.verified}</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-2">Contas Verificadas</p>
           </div>
-          <ChevronRight size={18} />
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {loading ? (
+            <div className="text-center py-10"><Sparkles className="animate-spin text-fashion-gold mx-auto" /></div>
+          ) : users.map((user) => (
+            <div key={user.id} className="premium-card p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img src={user.avatar_url || `https://picsum.photos/seed/${user.id}/100/100`} className="w-10 h-10 rounded-full object-cover" alt="" />
+                <div>
+                  <p className="text-sm font-bold flex items-center gap-1">
+                    {user.full_name}
+                    {user.is_verified && <CheckCircle2 size={14} className="text-blue-400" />}
+                  </p>
+                  <p className="text-[10px] text-zinc-500">@{user.username} • {user.account_type}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => toggleVerify(user.id, user.is_verified || false)}
+                  className={`p-2 rounded-lg transition-all ${user.is_verified ? 'bg-fashion-gold/20 text-fashion-gold' : 'bg-zinc-800 text-zinc-500'}`}
+                  title={user.is_verified ? "Desverificar" : "Verificar"}
+                >
+                  <CheckCircle2 size={18} />
+                </button>
+                {user.account_type !== 'admin' && (
+                  <button 
+                    onClick={() => makeAdmin(user.id)}
+                    className="p-2 bg-fashion-gold/10 text-fashion-gold rounded-lg hover:bg-fashion-gold hover:text-fashion-black transition-all"
+                    title="Tornar Admin"
+                  >
+                    <Crown size={18} />
+                  </button>
+                )}
+                <button 
+                  onClick={() => deleteUser(user.id)}
+                  className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Reels = () => {
+  const [reels, setReels] = useState<Reel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const fetchReels = async () => {
+      const { data } = await supabase
+        .from('reels')
+        .select('*, profiles(*)')
+        .order('created_at', { ascending: false });
+      setReels(data || []);
+      setLoading(false);
+    };
+    fetchReels();
+  }, []);
+
+  if (loading) return <div className="h-screen bg-fashion-black flex items-center justify-center"><Sparkles className="animate-spin text-fashion-gold" /></div>;
+
+  return (
+    <div className="h-[calc(100vh-70px)] bg-black snap-y snap-mandatory overflow-y-auto scrollbar-hide">
+      {reels.length === 0 ? (
+        <div className="h-full flex flex-col items-center justify-center text-zinc-500 p-10 text-center">
+          <Video size={64} className="mb-4 opacity-20" />
+          <h3 className="text-xl font-display gold-text-gradient mb-2">Nenhum Reel ainda</h3>
+          <p className="text-sm">Seja o primeiro a brilhar na passarela vertical!</p>
+        </div>
+      ) : reels.map((reel, index) => (
+        <div key={reel.id} className="h-full w-full snap-start relative flex flex-col justify-end">
+          {/* Video Mock */}
+          <div className="absolute inset-0 bg-zinc-900">
+            <img 
+              src={reel.video_url} 
+              className="w-full h-full object-cover opacity-80"
+              alt=""
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40" />
+          </div>
+
+          {/* Overlay Content */}
+          <div className="relative p-6 pb-24 flex justify-between items-end">
+            <div className="flex-1 pr-12">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full gold-gradient p-[1px]">
+                  <img 
+                    src={reel.profiles?.avatar_url || `https://picsum.photos/seed/${reel.user_id}/100/100`} 
+                    className="w-full h-full rounded-full object-cover border-2 border-fashion-black"
+                    alt=""
+                  />
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-white flex items-center gap-1">
+                    {reel.profiles?.full_name}
+                    {reel.profiles?.is_verified && <CheckCircle2 size={14} className="text-fashion-gold" />}
+                  </p>
+                  <p className="text-[10px] text-zinc-400">@{reel.profiles?.username}</p>
+                </div>
+                <button className="ml-2 px-3 py-1 border border-white/30 rounded-full text-[10px] font-bold text-white hover:bg-white/10">Seguir</button>
+              </div>
+              <p className="text-sm text-zinc-200 mb-4 line-clamp-2">{reel.caption}</p>
+              <div className="flex items-center gap-2 text-xs text-fashion-gold">
+                <Music size={14} className="animate-pulse" />
+                <span className="truncate">{reel.music_name || 'Som Original - BIG LOVA'}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-6 items-center">
+              <div className="flex flex-col items-center gap-1">
+                <button className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-red-500 transition-colors">
+                  <Heart size={28} />
+                </button>
+                <span className="text-[10px] font-bold text-white">{reel.likes_count}</span>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <button className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-fashion-gold transition-colors">
+                  <MessageCircle size={28} />
+                </button>
+                <span className="text-[10px] font-bold text-white">24</span>
+              </div>
+              <button className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-fashion-gold transition-colors">
+                <Share2 size={28} />
+              </button>
+              <div className="w-10 h-10 rounded-full gold-gradient p-[2px] animate-spin-slow">
+                <div className="w-full h-full rounded-full bg-fashion-black flex items-center justify-center">
+                  <Music size={16} className="text-fashion-gold" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };
@@ -779,6 +1546,17 @@ const SettingsView = ({ profile, onTabChange }: { profile: Profile | null, onTab
     <div className="p-6 max-w-lg mx-auto space-y-4">
       <h2 className="text-2xl font-display font-bold mb-6">Configurações</h2>
       
+      <button 
+        onClick={() => onTabChange('profile-edit')}
+        className="w-full bg-zinc-900 border border-white/10 p-4 rounded-2xl flex items-center justify-between hover:border-fashion-gold transition-all"
+      >
+        <div className="flex items-center gap-3 text-zinc-200">
+          <User size={20} className="text-fashion-gold" />
+          <span>Editar Perfil</span>
+        </div>
+        <ChevronRight size={18} />
+      </button>
+
       {profile?.account_type === 'normal' && (
         <button 
           onClick={() => onTabChange('premium')}
@@ -839,6 +1617,117 @@ const SettingsView = ({ profile, onTabChange }: { profile: Profile | null, onTab
       <div className="pt-10 text-center">
         <p className="text-[10px] text-zinc-600 uppercase tracking-[0.3em]">BIG LOVA-FASHION v1.0</p>
       </div>
+    </div>
+  );
+};
+
+const CreatePost = ({ onComplete }: { onComplete: () => void }) => {
+  const [type, setType] = useState<'post' | 'reel'>('post');
+  const [caption, setCaption] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setPreviewUrl(URL.createObjectURL(selectedFile));
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!file && !caption) {
+      alert('Adicione uma mídia ou legenda!');
+      return;
+    }
+    
+    setLoading(true);
+    const user = (await supabase.auth.getUser()).data.user;
+    if (!user) return;
+
+    // In a real app, we would upload to Supabase Storage here
+    // For now, we'll use a placeholder or the local preview URL if we want it to show up immediately
+    const mediaUrl = previewUrl || (type === 'post' ? 'https://picsum.photos/800/1000' : 'https://picsum.photos/seed/reel/800/1400');
+
+    if (type === 'post') {
+      await supabase.from('posts').insert({
+        user_id: user.id,
+        caption,
+        image_url: mediaUrl,
+        type: file?.type.startsWith('video') ? 'video' : 'photo'
+      });
+    } else {
+      await supabase.from('reels').insert({
+        user_id: user.id,
+        caption,
+        video_url: mediaUrl,
+        music_name: 'Fashion Beat - BIG LOVA'
+      });
+    }
+
+    setLoading(false);
+    alert('Publicado com sucesso!');
+    onComplete();
+  };
+
+  return (
+    <div className="p-6 max-w-lg mx-auto space-y-6 pb-24">
+      <h2 className="text-2xl font-display font-bold gold-text-gradient">Nova Publicação</h2>
+      
+      <div className="flex gap-2 p-1 bg-zinc-900 rounded-2xl">
+        <button 
+          onClick={() => { setType('post'); setFile(null); setPreviewUrl(null); }}
+          className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${type === 'post' ? 'bg-fashion-gold text-fashion-black' : 'text-zinc-500'}`}
+        >
+          POST FASHION
+        </button>
+        <button 
+          onClick={() => { setType('reel'); setFile(null); setPreviewUrl(null); }}
+          className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${type === 'reel' ? 'bg-fashion-gold text-fashion-black' : 'text-zinc-500'}`}
+        >
+          REEL FASHION
+        </button>
+      </div>
+
+      <label className="block cursor-pointer">
+        <div className="aspect-[4/5] bg-zinc-900 rounded-3xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-zinc-600 overflow-hidden relative">
+          {previewUrl ? (
+            type === 'post' && !file?.type.startsWith('video') ? (
+              <img src={previewUrl} className="w-full h-full object-cover" alt="Preview" />
+            ) : (
+              <video src={previewUrl} className="w-full h-full object-cover" muted />
+            )
+          ) : (
+            <>
+              <Upload size={48} className="mb-4 opacity-20" />
+              <p className="text-sm">Carregar {type === 'post' ? 'Foto/Vídeo' : 'Vídeo'}</p>
+              <p className="text-[10px] mt-2 opacity-50">Clique para selecionar do aparelho</p>
+            </>
+          )}
+          <input 
+            type="file" 
+            className="hidden" 
+            accept={type === 'post' ? "image/*,video/*" : "video/*"} 
+            onChange={handleFileChange}
+          />
+        </div>
+      </label>
+
+      <textarea 
+        placeholder="Escreva uma legenda luxuosa..."
+        className="w-full bg-zinc-900 border border-white/10 rounded-2xl p-4 text-sm focus:border-fashion-gold outline-none h-32"
+        value={caption}
+        onChange={(e) => setCaption(e.target.value)}
+      />
+
+      <button 
+        onClick={handlePublish}
+        disabled={loading}
+        className="w-full gold-gradient py-4 rounded-2xl text-fashion-black font-bold gold-glow disabled:opacity-50"
+      >
+        {loading ? 'Publicando...' : 'PUBLICAR AGORA'}
+      </button>
     </div>
   );
 };
@@ -916,11 +1805,14 @@ export default function App() {
       <main className="max-w-5xl mx-auto min-h-screen">
         <AnimatePresence mode="wait">
           {activeTab === 'feed' && <Feed profile={profile} />}
+          {activeTab === 'reels' && <Reels />}
           {activeTab === 'chat' && <Chat profile={profile} onCall={() => setCalling(true)} />}
           {activeTab === 'ranking' && <Ranking />}
           {activeTab === 'premium' && <PremiumForm onComplete={() => setActiveTab('feed')} />}
           {activeTab === 'admin' && <AdminPanel />}
           {activeTab === 'settings' && <SettingsView profile={profile} onTabChange={setActiveTab} />}
+          {activeTab === 'profile-edit' && <ProfileEdit profile={profile} onComplete={() => setActiveTab('settings')} />}
+          {activeTab === 'create' && <CreatePost onComplete={() => setActiveTab('feed')} />}
           {activeTab === 'profile' && (
             <div className="p-10 text-center text-zinc-500">
               <User size={48} className="mx-auto mb-4 opacity-20" />
@@ -950,10 +1842,10 @@ export default function App() {
             <Home size={24} />
           </button>
           <button 
-            onClick={() => setActiveTab('ranking')}
-            className={`p-2 transition-all ${activeTab === 'ranking' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
+            onClick={() => setActiveTab('reels')}
+            className={`p-2 transition-all ${activeTab === 'reels' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
           >
-            <Trophy size={24} />
+            <Video size={24} />
           </button>
           <button 
             onClick={() => setActiveTab('create')}

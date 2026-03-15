@@ -6,6 +6,7 @@ export interface Profile {
   avatar_url: string | null;
   bio: string | null;
   country: string | null;
+  address: string | null;
   fashion_style: string | null;
   account_type: 'normal' | 'premium' | 'admin';
   is_verified: boolean;
@@ -28,6 +29,36 @@ export interface Post {
   image_url: string;
   caption: string | null;
   hashtags: string[] | null;
+  likes_count: number;
+  created_at: string;
+  profiles?: Profile;
+}
+
+export interface Reel {
+  id: string;
+  user_id: string;
+  video_url: string;
+  caption: string | null;
+  music_name: string | null;
+  likes_count: number;
+  created_at: string;
+  profiles?: Profile;
+}
+
+export interface Like {
+  id: string;
+  user_id: string;
+  post_id?: string;
+  reel_id?: string;
+  created_at: string;
+}
+
+export interface Comment {
+  id: string;
+  user_id: string;
+  post_id?: string;
+  reel_id?: string;
+  content: string;
   created_at: string;
   profiles?: Profile;
 }
@@ -45,7 +76,7 @@ export interface Message {
   sender_id: string;
   receiver_id: string;
   content: string | null;
-  type: 'text' | 'audio' | 'photo' | 'video';
+  type: 'text' | 'audio' | 'photo' | 'video' | 'document';
   media_url: string | null;
   is_read: boolean;
   created_at: string;
