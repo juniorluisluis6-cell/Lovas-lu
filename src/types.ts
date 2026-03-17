@@ -10,6 +10,31 @@ export interface Profile {
   fashion_style: string | null;
   account_type: 'normal' | 'premium' | 'admin';
   is_verified: boolean;
+  private_profile: boolean;
+  hide_phone: boolean;
+  show_online: boolean;
+  notifications_enabled: boolean;
+  last_seen: string | null;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: 'like' | 'comment' | 'follow' | 'system';
+  content: string;
+  is_read: boolean;
+  created_at: string;
+  link?: string;
+}
+
+export interface GroupMessage {
+  id: string;
+  sender_id: string;
+  content: string;
+  type: 'text' | 'photo' | 'video';
+  media_url?: string;
+  created_at: string;
+  sender?: Profile;
 }
 
 export interface PremiumData {
@@ -81,6 +106,13 @@ export interface Message {
   is_read: boolean;
   created_at: string;
   sender?: Profile;
+}
+
+export interface Follow {
+  id: string;
+  follower_id: string;
+  following_id: string;
+  created_at: string;
 }
 
 export interface Vote {
