@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   private_profile BOOLEAN DEFAULT false,
   hide_phone BOOLEAN DEFAULT true,
   show_online BOOLEAN DEFAULT true,
+  notifications_enabled BOOLEAN DEFAULT true,
   last_seen TIMESTAMP WITH TIME ZONE,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
@@ -143,6 +144,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
   type TEXT NOT NULL,
   content TEXT NOT NULL,
+  link TEXT,
   is_read BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );

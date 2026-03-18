@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './lib/supabase';
 import { Profile, Post, Message, Story, PremiumData, Reel, Like, Comment as CommentType, Notification, GroupMessage } from './types';
 import { 
@@ -40,9 +40,11 @@ import {
   ThumbsUp,
   Star,
   Play,
+  Pause,
   Music,
   FileText,
   RotateCcw,
+  RotateCw,
   RefreshCw,
   Trash2,
   Ban,
@@ -52,6 +54,7 @@ import {
   Plus,
   Mail,
   Upload,
+  Download,
   Lock,
   Filter,
   MapPin,
@@ -65,6 +68,7 @@ import {
   ExternalLink,
   Volume2,
   VolumeX,
+  Monitor,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -567,11 +571,21 @@ const Auth = ({ onShowTerms }: { onShowTerms: () => void }) => {
   );
 };
 
-const StoryViewer = ({ story, onClose }: { story: Story, onClose: () => void }) => {
+const StoryViewer = ({ story, onClose, onRemove, currentUserId }: { story: Story, onClose: () => void, onRemove?: (id: string) => void, currentUserId?: string }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 5000);
     return () => clearTimeout(timer);
   }, [onClose]);
+
+  const handleDelete = async () => {
+    if (confirm('Deseja eliminar este status?')) {
+      const { error } = await supabase.from('stories').delete().eq('id', story.id);
+      if (!error) {
+        if (onRemove) onRemove(story.id);
+        onClose();
+      }
+    }
+  };
 
   return (
     <motion.div 
@@ -592,9 +606,16 @@ const StoryViewer = ({ story, onClose }: { story: Story, onClose: () => void }) 
             <p className="text-white/60 text-[10px]">{new Date(story.created_at).toLocaleTimeString()}</p>
           </div>
         </div>
-        <button onClick={onClose} className="text-white p-2">
-          <X size={24} />
-        </button>
+        <div className="flex items-center gap-2">
+          {currentUserId === story.user_id && (
+            <button onClick={handleDelete} className="text-red-500 p-2">
+              <Trash2 size={20} />
+            </button>
+          )}
+          <button onClick={onClose} className="text-white p-2">
+            <X size={24} />
+          </button>
+        </div>
       </div>
       
       <div className="flex-1 flex items-center justify-center">
@@ -625,9 +646,11 @@ const Stories = () => {
 
   useEffect(() => {
     const fetchStories = async () => {
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from('stories')
         .select('*, profiles(*)')
+        .gt('created_at', yesterday)
         .order('created_at', { ascending: false });
       setStories(data || []);
       setLoading(false);
@@ -740,23 +763,27 @@ const Stories = () => {
   );
 };
 
-const CommentModal = ({ postId, onClose }: { postId: string, onClose: () => void }) => {
+const CommentModal = ({ postId, reelId, onClose }: { postId?: string, reelId?: string, onClose: () => void }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchComments = async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('comments')
         .select('*, profiles(*)')
-        .eq('post_id', postId)
         .order('created_at', { ascending: true });
+      
+      if (postId) query = query.eq('post_id', postId);
+      if (reelId) query = query.eq('reel_id', reelId);
+
+      const { data } = await query;
       setComments(data || []);
       setLoading(false);
     };
     fetchComments();
-  }, [postId]);
+  }, [postId, reelId]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -765,13 +792,16 @@ const CommentModal = ({ postId, onClose }: { postId: string, onClose: () => void
     const user = (await supabase.auth.getUser()).data.user;
     if (!user) return;
 
+    const insertData: any = {
+      user_id: user.id,
+      content: newComment
+    };
+    if (postId) insertData.post_id = postId;
+    if (reelId) insertData.reel_id = reelId;
+
     const { data, error } = await supabase
       .from('comments')
-      .insert({
-        post_id: postId,
-        user_id: user.id,
-        content: newComment
-      })
+      .insert(insertData)
       .select('*, profiles(*)')
       .single();
 
@@ -779,26 +809,28 @@ const CommentModal = ({ postId, onClose }: { postId: string, onClose: () => void
       setComments([...comments, data]);
       setNewComment('');
 
-      // Create notification for post owner
-      const { data: post } = await supabase
-        .from('posts')
-        .select('user_id')
-        .eq('id', postId)
-        .single();
-      
-      if (post && post.user_id !== user.id) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('id', user.id)
-          .single();
+      // Create notification for owner
+      if (postId) {
+        const { data: post } = await supabase.from('posts').select('user_id').eq('id', postId).single();
+        if (post && post.user_id !== user.id) {
+          const { data: profile } = await supabase.from('profiles').select('username').eq('id', user.id).single();
+          await createNotification(post.user_id, 'comment', `@${profile?.username || 'Alguém'} comentou no seu post`, 'feed');
+        }
+      } else if (reelId) {
+        const { data: reel } = await supabase.from('reels').select('user_id').eq('id', reelId).single();
+        if (reel && reel.user_id !== user.id) {
+          const { data: profile } = await supabase.from('profiles').select('username').eq('id', user.id).single();
+          await createNotification(reel.user_id, 'comment', `@${profile?.username || 'Alguém'} comentou no seu Reel`, 'reels');
+        }
+      }
+    }
+  };
 
-        await createNotification(
-          post.user_id,
-          'comment',
-          `@${profile?.username || 'Alguém'} comentou no seu post: "${newComment.substring(0, 20)}${newComment.length > 20 ? '...' : ''}"`,
-          'feed'
-        );
+  const handleDeleteComment = async (commentId: string) => {
+    if (confirm('Deseja eliminar este comentário?')) {
+      const { error } = await supabase.from('comments').delete().eq('id', commentId);
+      if (!error) {
+        setComments(comments.filter(c => c.id !== commentId));
       }
     }
   };
@@ -819,16 +851,26 @@ const CommentModal = ({ postId, onClose }: { postId: string, onClose: () => void
         {loading ? (
           <div className="text-center py-10"><Sparkles className="animate-spin text-fashion-gold mx-auto" /></div>
         ) : comments.length > 0 ? comments.map((comment) => (
-          <div key={comment.id} className="flex gap-3">
+          <div key={comment.id} className="flex gap-3 group">
             <img 
               src={comment.profiles?.avatar_url || `https://picsum.photos/seed/${comment.user_id}/100/100`} 
               className="w-8 h-8 rounded-full"
               alt=""
             />
             <div className="flex-1">
-              <div className="bg-zinc-900/50 p-3 rounded-2xl">
+              <div className="bg-zinc-900/50 p-3 rounded-2xl relative">
                 <p className="text-[10px] font-bold text-fashion-gold mb-1">@{comment.profiles?.username}</p>
                 <p className="text-xs text-zinc-300">{comment.content}</p>
+                
+                {/* Delete button for comment owner or admin */}
+                {(comment.user_id === (supabase.auth.getUser() as any).data?.user?.id) && (
+                  <button 
+                    onClick={() => handleDeleteComment(comment.id)}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-red-500 p-1"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
               </div>
               <p className="text-[8px] text-zinc-600 mt-1 ml-2">
                 {new Date(comment.created_at).toLocaleDateString()}
@@ -1010,6 +1052,16 @@ const Feed = ({ profile, onTabChange }: { profile: Profile | null, onTabChange: 
           text: `Confira este post de @${post.profiles?.username}: ${post.caption}`,
           url: window.location.href,
         });
+        
+        // Create notification for owner
+        if (profile && post.user_id !== profile.id) {
+          await createNotification(
+            post.user_id,
+            'system',
+            `@${profile.username} compartilhou seu post!`,
+            'feed'
+          );
+        }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
           console.error('Error sharing:', err);
@@ -1019,6 +1071,16 @@ const Feed = ({ profile, onTabChange }: { profile: Profile | null, onTabChange: 
       try {
         await navigator.clipboard.writeText(window.location.href);
         alert('Link copiado para a área de transferência!');
+        
+        // Create notification for owner even on copy
+        if (profile && post.user_id !== profile.id) {
+          await createNotification(
+            post.user_id,
+            'system',
+            `@${profile.username} copiou o link do seu post!`,
+            'feed'
+          );
+        }
       } catch (err) {
         console.error('Failed to copy:', err);
       }
@@ -1027,7 +1089,7 @@ const Feed = ({ profile, onTabChange }: { profile: Profile | null, onTabChange: 
 
   if (loading) return (
     <div className="space-y-4 pb-24">
-      <Stories />
+      <Stories profile={profile} />
       {[1, 2, 3].map(i => (
         <div key={i} className="bg-fashion-zinc/30 border-y border-white/5 p-4 space-y-4">
           <div className="flex items-center gap-3">
@@ -1049,7 +1111,7 @@ const Feed = ({ profile, onTabChange }: { profile: Profile | null, onTabChange: 
 
   return (
     <div className="space-y-4 pb-24">
-      <Stories />
+      <Stories profile={profile} />
       
       <AnimatePresence>
         {activeCommentPost && (
@@ -1095,7 +1157,7 @@ const Feed = ({ profile, onTabChange }: { profile: Profile | null, onTabChange: 
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {profile?.account_type === 'admin' && (
+                {(profile?.account_type === 'admin' || profile?.id === post.user_id) && (
                   <button 
                     onClick={async () => {
                       if (confirm('Deseja remover este post?')) {
@@ -1106,6 +1168,30 @@ const Feed = ({ profile, onTabChange }: { profile: Profile | null, onTabChange: 
                     className="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
                   >
                     <Trash2 size={18} />
+                  </button>
+                )}
+                {post.type !== 'text' && (
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(post.image_url);
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `fashion-${post.id}.${post.type === 'video' ? 'mp4' : 'jpg'}`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                      } catch (err) {
+                        console.error('Download failed:', err);
+                        alert('Erro ao baixar foto. Tente novamente.');
+                      }
+                    }}
+                    className="p-2 text-fashion-gold hover:bg-fashion-gold/10 rounded-full transition-colors"
+                  >
+                    <Download size={18} />
                   </button>
                 )}
                 <button 
@@ -1364,7 +1450,8 @@ const PremiumForm = ({ onComplete }: { onComplete: () => void }) => {
 const SearchView = ({ profile }: { profile: Profile | null }) => {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'users' | 'posts' | 'reels'>('users');
-  const [fashionStyle, setFashionStyle] = useState('');
+  const [selectedStyle, setSelectedStyle] = useState('');
+  const [customStyle, setCustomStyle] = useState('');
   const [location, setLocation] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1373,10 +1460,12 @@ const SearchView = ({ profile }: { profile: Profile | null }) => {
     setLoading(true);
     try {
       let supabaseQuery: any;
+      const searchStyle = selectedStyle === 'custom' ? customStyle : selectedStyle;
+
       if (filter === 'users') {
         supabaseQuery = supabase.from('profiles').select('*');
         if (query) supabaseQuery = supabaseQuery.ilike('username', `%${query}%`);
-        if (fashionStyle) supabaseQuery = supabaseQuery.eq('fashion_style', fashionStyle);
+        if (searchStyle) supabaseQuery = supabaseQuery.ilike('fashion_style', `%${searchStyle}%`);
         if (location) supabaseQuery = supabaseQuery.ilike('address', `%${location}%`);
       } else if (filter === 'posts') {
         supabaseQuery = supabase.from('posts').select('*, profiles(*)');
@@ -1402,10 +1491,11 @@ const SearchView = ({ profile }: { profile: Profile | null }) => {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (query || fashionStyle || location) handleSearch();
+      const searchStyle = selectedStyle === 'custom' ? customStyle : selectedStyle;
+      if (query || searchStyle || location) handleSearch();
     }, 500);
     return () => clearTimeout(timer);
-  }, [query, filter, fashionStyle, location]);
+  }, [query, filter, selectedStyle, customStyle, location]);
 
   return (
     <div className="p-6 max-w-lg mx-auto space-y-6 pb-24">
@@ -1433,26 +1523,57 @@ const SearchView = ({ profile }: { profile: Profile | null }) => {
       </div>
 
       {filter === 'users' && (
-        <div className="grid grid-cols-2 gap-3">
-          <select 
-            className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs outline-none focus:border-fashion-gold"
-            value={fashionStyle}
-            onChange={(e) => setFashionStyle(e.target.value)}
-          >
-            <option value="">Estilo Fashion</option>
-            <option value="Casual">Casual</option>
-            <option value="Formal">Formal</option>
-            <option value="Streetwear">Streetwear</option>
-            <option value="Vintage">Vintage</option>
-            <option value="Luxury">Luxury</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Localização (Cidade)"
-            className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs outline-none focus:border-fashion-gold"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-          />
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <select 
+              className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs outline-none focus:border-fashion-gold"
+              value={selectedStyle}
+              onChange={(e) => setSelectedStyle(e.target.value)}
+            >
+              <option value="">Estilo Fashion</option>
+              <option value="Casual">Casual</option>
+              <option value="Formal">Formal</option>
+              <option value="Streetwear">Streetwear</option>
+              <option value="Vintage">Vintage</option>
+              <option value="Luxury">Luxury</option>
+              <option value="Minimalista">Minimalista</option>
+              <option value="Boêmio">Boêmio</option>
+              <option value="Chic">Chic</option>
+              <option value="Grunge">Grunge</option>
+              <option value="Preppy">Preppy</option>
+              <option value="Esportivo">Esportivo</option>
+              <option value="Gótico">Gótico</option>
+              <option value="Punk">Punk</option>
+              <option value="Romântico">Romântico</option>
+              <option value="Artístico">Artístico</option>
+              <option value="Alternativo">Alternativo</option>
+              <option value="Clássico">Clássico</option>
+              <option value="Moderno">Moderno</option>
+              <option value="custom">Personalizado...</option>
+            </select>
+            <input
+              type="text"
+              placeholder="Localização (Cidade)"
+              className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs outline-none focus:border-fashion-gold"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </div>
+          
+          {selectedStyle === 'custom' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <input
+                type="text"
+                placeholder="Digite o estilo de moda personalizado..."
+                className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2 text-xs outline-none focus:border-fashion-gold"
+                value={customStyle}
+                onChange={(e) => setCustomStyle(e.target.value)}
+              />
+            </motion.div>
+          )}
         </div>
       )}
 
@@ -1498,7 +1619,7 @@ const SearchView = ({ profile }: { profile: Profile | null }) => {
   );
 };
 
-const NotificationsView = ({ profile }: { profile: Profile | null }) => {
+const NotificationsView = ({ profile, onNavigate, onRead }: { profile: Profile | null, onNavigate: (tab: string, data?: any) => void, onRead?: () => void }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1512,30 +1633,114 @@ const NotificationsView = ({ profile }: { profile: Profile | null }) => {
         .order('created_at', { ascending: false });
       setNotifications(data || []);
       setLoading(false);
-      
-      // Mark as read
-      await supabase.from('notifications').update({ is_read: true }).eq('user_id', profile.id).eq('is_read', false);
     };
     fetchNotifications();
   }, [profile]);
 
+  const handleNotificationClick = async (n: Notification) => {
+    if (!profile) return;
+
+    // Mark as read immediately in UI
+    if (!n.is_read) {
+      setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, is_read: true } : item));
+      await supabase.from('notifications').update({ is_read: true }).eq('id', n.id);
+      if (onRead) onRead();
+    }
+
+    // Navigate based on type
+    if (n.content.includes('mensagem') || n.content.includes('Chamada')) {
+      // Try to extract username from content or use link if available
+      const usernameMatch = n.content.match(/@(\w+)/);
+      if (usernameMatch) {
+        const username = usernameMatch[1];
+        const { data: userProfile } = await supabase.from('profiles').select('*').eq('username', username).single();
+        if (userProfile) {
+          onNavigate('chat', userProfile);
+          return;
+        }
+      }
+      onNavigate('chat');
+    } else if (n.type === 'follow') {
+      const usernameMatch = n.content.match(/@(\w+)/);
+      if (usernameMatch) {
+        const username = usernameMatch[1];
+        const { data: userProfile } = await supabase.from('profiles').select('*').eq('username', username).single();
+        if (userProfile) {
+          onNavigate('other-profile', userProfile);
+          return;
+        }
+      }
+      onNavigate('feed');
+    } else if (n.type === 'like' || n.type === 'comment') {
+      onNavigate('feed');
+    } else if (n.content.includes('global')) {
+      onNavigate('global-chat');
+    } else {
+      onNavigate('feed');
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    const { error } = await supabase.from('notifications').delete().eq('id', id);
+    if (!error) {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (!profile) return;
+    if (confirm('Deseja limpar todas as notificações?')) {
+      const { error } = await supabase.from('notifications').delete().eq('user_id', profile.id);
+      if (!error) {
+        setNotifications([]);
+      }
+    }
+  };
+
   return (
     <div className="p-6 max-w-lg mx-auto space-y-4 pb-24">
-      <h2 className="text-2xl font-display font-bold gold-text-gradient mb-6">Notificações</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-display font-bold gold-text-gradient">Notificações</h2>
+        {notifications.length > 0 && (
+          <button 
+            onClick={clearAllNotifications}
+            className="text-[10px] text-red-500 uppercase tracking-widest font-bold hover:underline"
+          >
+            Limpar Tudo
+          </button>
+        )}
+      </div>
       {loading ? (
         <div className="text-center py-10"><RefreshCw className="animate-spin text-fashion-gold mx-auto" /></div>
       ) : notifications.length > 0 ? (
         notifications.map((n) => (
-          <div key={n.id} className={`p-4 rounded-2xl border ${n.is_read ? 'bg-zinc-900/30 border-white/5' : 'bg-fashion-gold/5 border-fashion-gold/20'}`}>
-            <div className="flex gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${n.type === 'like' ? 'bg-red-500/10 text-red-500' : 'bg-fashion-gold/10 text-fashion-gold'}`}>
-                {n.type === 'like' ? <Heart size={18} /> : <Sparkles size={18} />}
+          <div key={n.id} className="group relative">
+            <button 
+              onClick={() => handleNotificationClick(n)}
+              className={`w-full text-left p-4 rounded-2xl border transition-all ${n.is_read ? 'bg-zinc-900/30 border-white/5 opacity-60' : 'bg-fashion-gold/5 border-fashion-gold/20 shadow-[0_0_15px_rgba(212,175,55,0.1)]'}`}
+            >
+              <div className="flex gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${n.type === 'like' ? 'bg-red-500/10 text-red-500' : 'bg-fashion-gold/10 text-fashion-gold'}`}>
+                  {n.type === 'like' ? <Heart size={18} /> : <Sparkles size={18} />}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-zinc-200">{n.content}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                </div>
+                {!n.is_read && (
+                  <div className="w-2 h-2 bg-fashion-gold rounded-full mt-2 animate-pulse" />
+                )}
               </div>
-              <div>
-                <p className="text-sm text-zinc-200">{n.content}</p>
-                <p className="text-[10px] text-zinc-500 mt-1">{new Date(n.created_at).toLocaleString()}</p>
-              </div>
-            </div>
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteNotification(n.id);
+              }}
+              className="absolute -right-2 -top-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg scale-75 hover:scale-100"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         ))
       ) : (
@@ -2010,19 +2215,37 @@ const GlobalChat = ({ profile }: { profile: Profile | null }) => {
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const PAGE_SIZE = 50;
+
+  const fetchMessages = async (append = false) => {
+    if (!profile) return;
+    if (!append) setLoading(true);
+    else setLoadingMore(true);
+
+    const { data } = await supabase
+      .from('group_messages')
+      .select('*, sender:profiles(*)')
+      .order('created_at', { ascending: false })
+      .range(append ? messages.length : 0, (append ? messages.length : 0) + PAGE_SIZE - 1);
+    
+    if (data) {
+      const reversed = [...data].reverse();
+      if (append) {
+        setMessages(prev => [...reversed, ...prev]);
+      } else {
+        setMessages(reversed);
+        scrollToBottom();
+      }
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoading(false);
+    setLoadingMore(false);
+  };
 
   useEffect(() => {
-    const fetchMessages = async () => {
-      const { data } = await supabase
-        .from('group_messages')
-        .select('*, sender:profiles(*)')
-        .order('created_at', { ascending: true })
-        .limit(50);
-      setMessages(data || []);
-      setLoading(false);
-      scrollToBottom();
-    };
     fetchMessages();
 
     const subscription = supabase
@@ -2050,8 +2273,16 @@ const GlobalChat = ({ profile }: { profile: Profile | null }) => {
 
   const scrollToBottom = () => {
     setTimeout(() => {
-      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
     }, 100);
+  };
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop === 0 && hasMore && !loadingMore) {
+      fetchMessages(true);
+    }
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -2068,7 +2299,7 @@ const GlobalChat = ({ profile }: { profile: Profile | null }) => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-160px)] pb-24">
+    <div className="flex flex-col h-[calc(100vh-160px)]">
       <div className="p-4 border-b border-white/5 bg-fashion-gold/5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 gold-gradient rounded-xl flex items-center justify-center gold-glow">
@@ -2081,7 +2312,15 @@ const GlobalChat = ({ profile }: { profile: Profile | null }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div 
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide pb-10"
+      >
+        {loadingMore && (
+          <div className="text-center py-2">
+            <RefreshCw size={16} className="animate-spin text-fashion-gold mx-auto" />
+          </div>
+        )}
         {loading ? (
           <div className="text-center py-10"><RefreshCw className="animate-spin text-fashion-gold mx-auto" /></div>
         ) : messages.map((msg) => (
@@ -2119,7 +2358,7 @@ const GlobalChat = ({ profile }: { profile: Profile | null }) => {
         <div ref={scrollRef} />
       </div>
 
-      <form onSubmit={handleSend} className="p-4 border-t border-white/5 bg-zinc-900/50 flex gap-2">
+      <form onSubmit={handleSend} className="p-4 border-t border-white/5 bg-zinc-900/50 flex gap-2 pb-20">
         <input
           type="text"
           placeholder="Mensagem para o grupo..."
@@ -2135,16 +2374,183 @@ const GlobalChat = ({ profile }: { profile: Profile | null }) => {
   );
 };
 
-const VideoCall = ({ onEnd }: { onEnd: () => void }) => {
+const VideoCall = ({ onEnd, type, recipient, addToast, profile }: { onEnd: () => void, type: 'voice' | 'video', recipient: Profile | null, addToast: (msg: string) => void, profile: Profile | null }) => {
   const [timer, setTimer] = useState(0);
+  const [isAccepted, setIsAccepted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(type === 'voice');
   const [isFrontCamera, setIsFrontCamera] = useState(true);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [callStatus, setCallStatus] = useState<'calling' | 'ringing' | 'connected' | 'no-answer'>('calling');
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const ringingRef = useRef<HTMLAudioElement | null>(null);
+  const noAnswerRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const interval = setInterval(() => setTimer(t => t + 1), 1000);
-    return () => clearInterval(interval);
+    // Initialize audio
+    ringingRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/1351/1351-preview.mp3');
+    ringingRef.current.loop = true;
+    noAnswerRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+
+    // Start ringing
+    ringingRef.current.play().catch(e => console.log("Audio play failed", e));
+    setCallStatus('ringing');
+
+    // Simulate connection after 10 seconds (for realism)
+    const connTimeout = setTimeout(() => {
+      setIsAccepted(true);
+      setCallStatus('connected');
+      if (ringingRef.current) {
+        ringingRef.current.pause();
+        ringingRef.current.currentTime = 0;
+      }
+    }, 10000);
+
+    // Timeout after 60 seconds
+    const globalTimeout = setTimeout(() => {
+      if (!isAccepted) {
+        setCallStatus('no-answer');
+        if (ringingRef.current) {
+          ringingRef.current.pause();
+        }
+        if (noAnswerRef.current) {
+          noAnswerRef.current.play().catch(e => console.log(e));
+        }
+        sendMissedCallNotification();
+      }
+    }, 60000);
+
+    const interval = setInterval(() => {
+      if (isAccepted) setTimer(t => t + 1);
+    }, 1000);
+
+    if (type === 'video') {
+      startCamera();
+    }
+
+    return () => {
+      clearTimeout(connTimeout);
+      clearTimeout(globalTimeout);
+      clearInterval(interval);
+      if (ringingRef.current) {
+        ringingRef.current.pause();
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
   }, []);
+
+  const sendMissedCallNotification = async () => {
+    if (!recipient || !profile) return;
+    try {
+      await supabase.from('notifications').insert({
+        user_id: recipient.id,
+        type: 'system',
+        content: `Chamada de ${type === 'voice' ? 'voz' : 'vídeo'} perdida de @${profile.username}`,
+        is_read: false,
+        created_at: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error sending missed call notification:', err);
+    }
+  };
+
+  const startCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error("Camera API not supported");
+      addToast("Seu navegador não suporta acesso à câmera.");
+      return;
+    }
+
+    try {
+      // Stop any existing stream first
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+        setStream(null);
+      }
+      
+      // Wait a bit for hardware to be fully released by OS
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      let newStream: MediaStream;
+      
+      // Try with ideal constraints first
+      const constraints = {
+        video: { 
+          facingMode: isFrontCamera ? 'user' : 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        }, 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      };
+
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (e) {
+        console.warn("Preferred constraints failed, trying basic video/audio...", e);
+        newStream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        });
+      }
+      
+      setStream(newStream);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = newStream;
+        // Force play with promise handling to avoid interruption errors
+        const playPromise = localVideoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            if (error.name !== 'AbortError') {
+              console.error("Auto-play was prevented:", error);
+            }
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error("Error accessing camera:", err);
+      
+      // Last ditch effort: video only, no constraints
+      try {
+        const videoOnly = await navigator.mediaDevices.getUserMedia({ video: true });
+        setStream(videoOnly);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = videoOnly;
+          const playPromise = localVideoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(e => {
+              if (e.name !== 'AbortError') console.error(e);
+            });
+          }
+        }
+        addToast("Câmera conectada sem áudio.");
+      } catch (err2) {
+        console.error("Final camera access failure:", err2);
+        const errorMsg = err.name === 'NotAllowedError' ? "Permissão de câmera negada." : 
+                        err.name === 'NotFoundError' ? "Câmera não encontrada." :
+                        "Erro ao iniciar câmera. Verifique se outra aba está usando-a.";
+        addToast(errorMsg);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (type === 'video' && !isCameraOff) {
+      startCamera();
+    } else if (isCameraOff && stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+  }, [isFrontCamera, isCameraOff]);
 
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60);
@@ -2157,45 +2563,113 @@ const VideoCall = ({ onEnd }: { onEnd: () => void }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-fashion-black flex flex-col"
+      className="fixed inset-0 z-[200] bg-fashion-black flex flex-col overflow-hidden"
     >
-      <div className="relative flex-1">
-        {/* Remote Video (Mock) */}
-        <img 
-          src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=1000" 
-          className="w-full h-full object-cover opacity-50"
-          alt=""
-          referrerPolicy="no-referrer"
-        />
-        
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="w-24 h-24 rounded-full gold-gradient p-1 mb-4">
-            <div className="w-full h-full rounded-full bg-fashion-black flex items-center justify-center">
-              <User size={48} className="text-fashion-gold" />
+      <div className="relative flex-1 bg-zinc-950">
+        {/* Remote View */}
+        {callStatus === 'no-answer' ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-fashion-black z-50">
+            <div className="w-48 h-48 rounded-full bg-red-500/10 flex items-center justify-center border-4 border-red-500/30 mb-8 animate-pulse">
+              <PhoneOff size={80} className="text-red-500" />
             </div>
+            <h2 className="text-3xl font-display font-bold text-white mb-2">Sem Resposta</h2>
+            <p className="text-zinc-500 text-lg mb-10">@{recipient?.username} não atendeu</p>
+            <button 
+              onClick={onEnd}
+              className="px-12 py-4 bg-red-500 text-white rounded-full font-bold shadow-2xl shadow-red-500/40 hover:scale-105 transition-all active:scale-95"
+            >
+              Fechar Chamada
+            </button>
           </div>
-          <h2 className="text-2xl font-display font-bold gold-text-gradient">Model Exclusive</h2>
-          <p className="text-fashion-gold/60 text-sm mt-2">{formatTime(timer)}</p>
-        </div>
-
-        {/* Local Video (Small Overlay) */}
-        <div className="absolute top-6 right-6 w-32 aspect-[3/4] bg-zinc-800 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
-          {!isCameraOff ? (
+        ) : isAccepted ? (
+          <div className="w-full h-full relative">
+            {/* Mock Remote Video */}
             <img 
-              src="https://picsum.photos/seed/me/400/600" 
-              className={`w-full h-full object-cover ${!isFrontCamera ? 'scale-x-[-1]' : ''}`}
+              src={recipient?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=1000"} 
+              className="w-full h-full object-cover opacity-40 blur-sm"
               alt=""
             />
-          ) : (
-            <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
-              <VideoOff size={24} className="text-zinc-700" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-40 h-40 rounded-full gold-gradient p-1 mx-auto mb-6 shadow-2xl animate-pulse">
+                  <img 
+                    src={recipient?.avatar_url || `https://ui-avatars.com/api/?name=${recipient?.username}`} 
+                    className="w-full h-full rounded-full object-cover" 
+                    alt="" 
+                  />
+                </div>
+                <h2 className="text-3xl font-display font-bold gold-text-gradient">@{recipient?.username}</h2>
+                <p className="text-fashion-gold font-mono text-xl mt-4 tracking-widest">{formatTime(timer)}</p>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          /* Calling/Ringing State */
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-fashion-black">
+            <div className={`w-48 h-48 rounded-full gold-gradient p-1 mb-8 shadow-[0_0_50px_rgba(212,175,55,0.3)] ${callStatus === 'ringing' ? 'animate-pulse' : 'animate-bounce'}`}>
+              <div className="w-full h-full rounded-full bg-fashion-black overflow-hidden flex items-center justify-center">
+                {recipient?.avatar_url ? (
+                  <img src={recipient.avatar_url} className="w-full h-full object-cover" alt="" />
+                ) : (
+                  <User size={80} className="text-fashion-gold" />
+                )}
+              </div>
+            </div>
+            <h2 className="text-3xl font-display font-bold gold-text-gradient mb-2">@{recipient?.username}</h2>
+            <p className="text-fashion-gold/60 text-lg animate-pulse">
+              {callStatus === 'ringing' ? 'Chamando...' : callStatus === 'no-answer' ? 'Sem Resposta' : 'Iniciando...'}
+            </p>
+            
+            {callStatus === 'no-answer' && (
+              <div className="mt-8 flex flex-col items-center gap-4">
+                <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center text-red-500">
+                  <PhoneOff size={24} />
+                </div>
+                <button 
+                  onClick={onEnd}
+                  className="px-8 py-3 gold-gradient rounded-full text-fashion-black font-bold text-sm gold-glow"
+                >
+                  FECHAR
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Local Video (Small Overlay - Bottom Right like WhatsApp) */}
+        {type === 'video' && (
+          <motion.div 
+            drag
+            dragConstraints={{ left: -300, right: 0, top: -500, bottom: 0 }}
+            className="absolute bottom-32 right-6 w-32 aspect-[3/4] bg-zinc-900 rounded-2xl border border-white/20 overflow-hidden shadow-2xl z-10"
+          >
+            {!isCameraOff ? (
+              <div className="w-full h-full relative bg-black">
+                <video 
+                  ref={localVideoRef}
+                  autoPlay 
+                  playsInline 
+                  muted
+                  className={`w-full h-full object-cover ${isFrontCamera ? 'scale-x-[-1]' : ''}`}
+                />
+                {isScreenSharing && (
+                  <div className="absolute inset-0 bg-fashion-gold/20 backdrop-blur-sm flex flex-col items-center justify-center text-fashion-gold">
+                    <Monitor size={24} className="mb-1" />
+                    <span className="text-[8px] font-bold uppercase">Sharing</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
+                <User size={32} className="text-zinc-700" />
+              </div>
+            )}
+          </motion.div>
+        )}
       </div>
 
       {/* Controls */}
-      <div className="p-10 bg-gradient-to-t from-black to-transparent flex justify-center items-center gap-6">
+      <div className="px-6 py-10 bg-zinc-900/90 backdrop-blur-2xl border-t border-white/5 flex justify-center items-center gap-4 sm:gap-8">
         <button 
           onClick={() => setIsMuted(!isMuted)}
           className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isMuted ? 'bg-red-500 text-white' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
@@ -2205,24 +2679,35 @@ const VideoCall = ({ onEnd }: { onEnd: () => void }) => {
         
         <button 
           onClick={onEnd}
-          className="w-20 h-20 rounded-full bg-red-600 flex items-center justify-center text-white gold-glow shadow-2xl hover:bg-red-700 transition-colors"
+          className="w-20 h-20 rounded-full bg-red-600 flex items-center justify-center text-white gold-glow shadow-2xl hover:bg-red-700 transition-all hover:scale-110 active:scale-95"
         >
           <PhoneOff size={32} />
         </button>
 
-        <button 
-          onClick={() => setIsCameraOff(!isCameraOff)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isCameraOff ? 'bg-red-500 text-white' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
-        >
-          {isCameraOff ? <VideoOff size={24} /> : <Video size={24} />}
-        </button>
+        {type === 'video' && (
+          <>
+            <button 
+              onClick={() => setIsCameraOff(!isCameraOff)}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isCameraOff ? 'bg-red-500 text-white' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
+            >
+              {isCameraOff ? <VideoOff size={24} /> : <Video size={24} />}
+            </button>
 
-        <button 
-          onClick={() => setIsFrontCamera(!isFrontCamera)}
-          className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center text-white hover:bg-zinc-700"
-        >
-          <RefreshCw size={24} />
-        </button>
+            <button 
+              onClick={() => setIsFrontCamera(!isFrontCamera)}
+              className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center text-white hover:bg-zinc-700"
+            >
+              <RefreshCw size={24} />
+            </button>
+
+            <button 
+              onClick={() => setIsScreenSharing(!isScreenSharing)}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isScreenSharing ? 'bg-fashion-gold text-fashion-black' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
+            >
+              <Monitor size={24} />
+            </button>
+          </>
+        )}
       </div>
     </motion.div>
   );
@@ -2360,16 +2845,21 @@ const Ranking = () => {
   );
 };
 
-const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall: () => void, recipient?: Profile | null }) => {
+const Chat = ({ profile, onCall, recipient, addToast, onNavigate }: { profile: Profile | null, onCall: (type: 'voice' | 'video', recipient: Profile | null) => void, recipient?: Profile | null, addToast: (msg: string) => void, onNavigate?: (tab: string, data?: any) => void }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<{ profile: Profile, lastMessage: Message }[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [allMembers, setAllMembers] = useState<Profile[]>([]);
   const [view, setView] = useState<'list' | 'chat'>('list');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ id: string, createdAt: string } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const PAGE_SIZE = 50;
 
   useEffect(() => {
     if (recipient) {
@@ -2383,10 +2873,9 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
     const fetchConversations = async () => {
       if (!profile) return;
       
-      // Fetch all messages involving the user
       const { data: msgs } = await supabase
         .from('messages')
-        .select('*, sender:profiles(*), receiver:profiles(*)')
+        .select('*, sender:sender_id(*), receiver:receiver_id(*)')
         .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
         .order('created_at', { ascending: false });
 
@@ -2394,7 +2883,7 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
         const convMap = new Map<string, { profile: Profile, lastMessage: Message }>();
         msgs.forEach(m => {
           const otherUser = m.sender_id === profile.id ? m.receiver : m.sender;
-          if (otherUser && otherUser.id !== '00000000-0000-0000-0000-000000000000') {
+          if (otherUser) {
             if (!convMap.has(otherUser.id)) {
               convMap.set(otherUser.id, { profile: otherUser as Profile, lastMessage: m });
             }
@@ -2413,13 +2902,14 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
     fetchConversations();
     fetchMembers();
 
-    // Subscribe to messages for real-time updates and sounds
     const sub = supabase
       .channel('chat-notifications')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
         const newMsg = payload.new as Message;
         if (newMsg.receiver_id === profile?.id) {
-          playSound('message');
+          if (profile?.notifications_enabled) {
+            playSound('message');
+          }
         }
         fetchConversations();
       })
@@ -2428,40 +2918,63 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
     return () => { sub.unsubscribe(); };
   }, [profile?.id]);
 
+  const fetchMessages = async (append = false) => {
+    if (!profile) return;
+    if (!append) setLoading(true);
+    else setLoadingMore(true);
+
+    let query = supabase
+      .from('messages')
+      .select('*, sender:sender_id(*)')
+      .order('created_at', { ascending: false })
+      .range(append ? messages.length : 0, (append ? messages.length : 0) + PAGE_SIZE - 1);
+    
+    if (recipient) {
+      query = query.or(`and(sender_id.eq.${profile.id},receiver_id.eq.${recipient.id}),and(sender_id.eq.${recipient.id},receiver_id.eq.${profile.id})`);
+    } else {
+      query = query.is('receiver_id', null);
+    }
+
+    const { data } = await query;
+    if (data) {
+      const reversed = [...data].reverse();
+      if (append) {
+        setMessages(prev => [...reversed, ...prev]);
+      } else {
+        setMessages(reversed);
+      }
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoading(false);
+    setLoadingMore(false);
+    
+    if (!append) {
+      setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, 100);
+    }
+  };
+
   useEffect(() => {
     if (view === 'chat' && profile) {
-      const fetchMessages = async () => {
-        let query = supabase
-          .from('messages')
-          .select('*, sender:profiles(*)')
-          .order('created_at', { ascending: true });
-        
-        if (recipient) {
-          query = query.or(`and(sender_id.eq.${profile.id},receiver_id.eq.${recipient.id}),and(sender_id.eq.${recipient.id},receiver_id.eq.${profile.id})`);
-        } else {
-          query = query.eq('receiver_id', '00000000-0000-0000-0000-000000000000');
-        }
-
-        const { data } = await query;
-        setMessages(data || []);
-      };
       fetchMessages();
 
       const sub = supabase
         .channel('chat-room')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
           const newMsgRaw = payload.new as Message;
-          const isGlobal = newMsgRaw.receiver_id === '00000000-0000-0000-0000-000000000000';
+          const isGlobal = !newMsgRaw.receiver_id;
           const isRelevant = recipient 
             ? ((newMsgRaw.sender_id === profile.id && newMsgRaw.receiver_id === recipient.id) || 
                (newMsgRaw.sender_id === recipient.id && newMsgRaw.receiver_id === profile.id))
             : isGlobal;
 
           if (isRelevant) {
-            // Fetch full message with sender profile
             const { data: newMsg } = await supabase
               .from('messages')
-              .select('*, sender:profiles(*)')
+              .select('*, sender:sender_id(*)')
               .eq('id', newMsgRaw.id)
               .single();
 
@@ -2471,10 +2984,15 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
                 return [...prev, newMsg];
               });
               
-              // Mark as read if we are the receiver
               if (newMsg.receiver_id === profile.id) {
                 await supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id);
               }
+
+              setTimeout(() => {
+                if (scrollRef.current) {
+                  scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                }
+              }, 100);
             }
           }
         })
@@ -2483,6 +3001,12 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
       return () => { sub.unsubscribe(); };
     }
   }, [view, recipient, profile?.id]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop === 0 && hasMore && !loadingMore) {
+      fetchMessages(true);
+    }
+  };
 
   const filteredConversations = conversations.filter(c => 
     c.profile.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -2603,29 +3127,54 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
 
     const messageData = {
       sender_id: profile.id,
-      receiver_id: recipient?.id || '00000000-0000-0000-0000-000000000000',
+      receiver_id: recipient?.id || null,
       content: type === 'text' ? newMessage : null,
-      type,
-      media_url: mediaUrl || null
+      type: type,
+      media_url: mediaUrl || null,
+      is_read: false
     };
 
-    const tempId = Math.random().toString();
-    const optimisticMsg: Message = { ...messageData, id: tempId, created_at: new Date().toISOString(), is_read: false };
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg: Message = { 
+      ...messageData, 
+      id: tempId, 
+      created_at: new Date().toISOString(),
+      sender: profile
+    };
+    
     setMessages(prev => [...prev, optimisticMsg]);
     setNewMessage('');
 
-    const { error } = await supabase.from('messages').insert(messageData);
-    if (error) {
-      alert('Erro ao enviar mensagem');
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert([messageData])
+        .select('*, sender:sender_id(*)');
+
+      if (error) {
+        console.error('Erro ao salvar no banco:', error);
+        addToast(`Erro: ${error.message}`);
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        return;
+      }
+
+      if (data && data[0]) {
+        // Substitui a mensagem temporária pela real do banco
+        setMessages(prev => prev.map(m => m.id === tempId ? data[0] : m));
+      }
+
+      if (recipient) {
+        await createNotification(
+          recipient.id, 
+          'system', 
+          `Nova mensagem de @${profile.username}`,
+          'chat'
+        );
+      }
+    } catch (err: any) {
+      console.error('Falha crítica no envio:', err);
+      addToast('Falha de conexão');
       setMessages(prev => prev.filter(m => m.id !== tempId));
-    } else if (recipient) {
-      // Create notification for recipient
-      await createNotification(
-        recipient.id, 
-        'system', 
-        `Nova mensagem de @${profile.username}: ${type === 'text' ? newMessage : `[${type}]`}`,
-        'chat'
-      );
     }
   };
 
@@ -2666,17 +3215,22 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
     const diffMins = (now.getTime() - msgTime.getTime()) / 60000;
 
     if (diffMins <= 10) {
-      if (confirm('Deseja apagar esta mensagem para todos?')) {
-        await supabase.from('messages').delete().eq('id', msgId);
+      // For messages sent in the last 10 mins, we allow deleting for everyone
+      try {
+        const { error } = await supabase.from('messages').delete().eq('id', msgId);
+        if (error) throw error;
         setMessages(prev => prev.filter(m => m.id !== msgId));
+        addToast('Mensagem apagada para todos');
+      } catch (err) {
+        console.error('Error deleting message:', err);
+        addToast('Erro ao apagar mensagem');
       }
     } else {
-      if (confirm('Deseja apagar esta mensagem para você?')) {
-        // In a real app we would have a 'deleted_for' array or similar
-        // For now we just remove it from the local state
-        setMessages(prev => prev.filter(m => m.id !== msgId));
-      }
+      // Just remove from local view for older messages
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+      addToast('Mensagem removida da sua visualização');
     }
+    setShowDeleteConfirm(null);
   };
 
   const MessageStatus = ({ msg }: { msg: Message }) => {
@@ -2719,15 +3273,36 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={onCall} className="p-2 text-fashion-gold hover:bg-fashion-gold/10 rounded-xl transition-all"><Phone size={20} /></button>
-          <button onClick={onCall} className="p-2 text-fashion-gold hover:bg-fashion-gold/10 rounded-xl transition-all"><Video size={20} /></button>
+          <button onClick={() => onCall('voice', recipient || null)} className="p-2 text-fashion-gold hover:bg-fashion-gold/10 rounded-xl transition-all"><Phone size={20} /></button>
+          <button onClick={() => onCall('video', recipient || null)} className="p-2 text-fashion-gold hover:bg-fashion-gold/10 rounded-xl transition-all"><Video size={20} /></button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide"
+      >
+        {loadingMore && (
+          <div className="text-center py-2">
+            <RefreshCw size={16} className="animate-spin text-fashion-gold mx-auto" />
+          </div>
+        )}
         {messages.map((msg) => (
           <div key={msg.id} className={`flex group ${msg.sender_id === profile?.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] p-3 rounded-2xl ${msg.sender_id === profile?.id ? 'bg-fashion-gold text-fashion-black' : 'bg-zinc-800 text-zinc-200'}`}>
+            <div className={`max-w-[80%] p-3 rounded-2xl relative ${msg.sender_id === profile?.id ? 'bg-fashion-gold text-fashion-black' : 'bg-zinc-800 text-zinc-200'}`}>
+              {msg.sender_id === profile?.id && (
+                <button 
+                  onClick={() => {
+                    if (confirm('Deseja eliminar esta mensagem?')) {
+                      deleteMessage(msg.id, msg.created_at);
+                    }
+                  }}
+                  className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:scale-110 transition-all"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
               {!recipient && msg.sender_id !== profile?.id && (
                 <div className="flex items-center gap-2 mb-1">
                   <p className="text-[10px] font-bold opacity-70">@{msg.sender?.username || 'user'}</p>
@@ -2758,7 +3333,7 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
                 <MessageStatus msg={msg} />
                 {msg.sender_id === profile?.id && (
                   <button 
-                    onClick={() => deleteMessage(msg.id, msg.created_at)}
+                    onClick={() => setShowDeleteConfirm({ id: msg.id, createdAt: msg.created_at })}
                     className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <Trash2 size={10} className="text-red-500" />
@@ -2768,6 +3343,34 @@ const Chat = ({ profile, onCall, recipient }: { profile: Profile | null, onCall:
             </div>
           </div>
         ))}
+
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-zinc-900 border border-white/10 p-6 rounded-3xl max-w-xs w-full text-center"
+            >
+              <h3 className="text-lg font-bold mb-2">Apagar Mensagem?</h3>
+              <p className="text-sm text-zinc-400 mb-6">Esta ação não pode ser desfeita.</p>
+              <div className="flex flex-col gap-2">
+                <button 
+                  onClick={() => deleteMessage(showDeleteConfirm.id, showDeleteConfirm.createdAt)}
+                  className="w-full py-3 bg-red-500 text-white font-bold rounded-2xl hover:bg-red-600 transition-colors"
+                >
+                  Apagar
+                </button>
+                <button 
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="w-full py-3 bg-zinc-800 text-zinc-300 font-bold rounded-2xl hover:bg-zinc-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {uploading && (
           <div className="flex justify-end">
             <div className="bg-fashion-gold/20 p-3 rounded-2xl animate-pulse flex items-center gap-2">
@@ -2950,22 +3553,94 @@ const AdminPanel = () => {
   );
 };
 
-function ReelItem({ reel, isActive, profile, onRemove, onViewProfile }: any) {
+function ReelItem({ reel, isActive, profile, onRemove, onViewProfile, onComment }: any) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
   const [likesCount, setLikesCount] = useState(reel.likes_count || 0);
+  const [commentsCount, setCommentsCount] = useState(reel.comments_count || 0);
+  const [sharesCount, setSharesCount] = useState(reel.shares_count || 0);
   const [isLiked, setIsLiked] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [showControls, setShowControls] = useState(false);
+  const lastTap = useRef<number>(0);
 
   useEffect(() => {
-    if (videoRef.current) {
+    const checkLike = async () => {
+      if (!profile) return;
+      const { data } = await supabase
+        .from('likes')
+        .select('*')
+        .eq('user_id', profile.id)
+        .eq('reel_id', reel.id)
+        .single();
+      setIsLiked(!!data);
+    };
+
+    const fetchCounts = async () => {
+      // Fetch comment count
+      const { count: cCount } = await supabase
+        .from('comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('reel_id', reel.id);
+      
+      if (cCount !== null) setCommentsCount(cCount);
+    };
+
+    checkLike();
+    fetchCounts();
+
+    // Subscribe to comments for this reel
+    const subscription = supabase
+      .channel(`comments-${reel.id}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'comments',
+        filter: `reel_id=eq.${reel.id}`
+      }, () => {
+        setCommentsCount(prev => prev + 1);
+      })
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: 'comments',
+        filter: `reel_id=eq.${reel.id}`
+      }, () => {
+        setCommentsCount(prev => Math.max(0, prev - 1));
+      })
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [profile, reel.id]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
       if (isActive) {
-        videoRef.current.play().catch(e => console.error('Error playing video:', e));
+        const playPromise = video.play();
+        setIsPlaying(true);
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            // Ignore AbortError which happens when playback is interrupted by a pause or unmount
+            if (error.name !== 'AbortError') {
+              console.error('Error playing video:', error);
+            }
+          });
+        }
       } else {
-        videoRef.current.pause();
-        videoRef.current.currentTime = 0;
+        video.pause();
+        video.currentTime = 0;
+        setIsPlaying(false);
       }
     }
+    return () => {
+      if (video) {
+        video.pause();
+      }
+    };
   }, [isActive]);
 
   useEffect(() => {
@@ -3035,10 +3710,110 @@ function ReelItem({ reel, isActive, profile, onRemove, onViewProfile }: any) {
     }
   };
 
+  const handleShare = async () => {
+    setSharesCount(prev => prev + 1);
+    // Optionally update shares_count in DB if the column exists
+    try {
+      await supabase.rpc('increment_reel_shares', { reel_id_param: reel.id });
+      
+      // Create notification for owner
+      if (profile && reel.user_id !== profile.id) {
+        await createNotification(
+          reel.user_id,
+          'system',
+          `@${profile.username} compartilhou seu Reel!`,
+          'reels'
+        );
+      }
+    } catch (e) {
+      console.warn('Could not increment shares in DB', e);
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'BIG LOVA-FASHION Reel',
+          text: `Confira este Reel de @${reel.profiles?.username}: ${reel.caption}`,
+          url: window.location.href,
+        });
+      } catch (err: any) {
+        if (err.name !== 'AbortError') console.error('Error sharing:', err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        alert('Link do Reel copiado!');
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(reel.video_url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reel-${reel.id}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download failed:', err);
+      alert('Erro ao baixar Reel. Tente novamente.');
+    }
+  };
+
+  const togglePlay = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+        setShowControls(true);
+      } else {
+        videoRef.current.play().catch(e => console.error(e));
+        setShowControls(false);
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleVideoClick = (e: React.MouseEvent) => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+      // Double tap
+      togglePlay();
+    } else {
+      // Single tap - just toggle controls visibility if playing
+      if (isPlaying) {
+        setShowControls(!showControls);
+      }
+    }
+    lastTap.current = now;
+  };
+
+  const skipForward = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (videoRef.current) {
+      videoRef.current.currentTime += 10;
+    }
+  };
+
+  const skipBackward = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (videoRef.current) {
+      videoRef.current.currentTime -= 10;
+    }
+  };
+
   return (
     <div className="h-full w-full snap-start relative flex flex-col justify-end">
       {/* Video Content */}
-      <div className="absolute inset-0 bg-zinc-900">
+      <div className="absolute inset-0 bg-zinc-900" onClick={handleVideoClick}>
         <video 
           ref={videoRef}
           src={reel.video_url} 
@@ -3047,8 +3822,55 @@ function ReelItem({ reel, isActive, profile, onRemove, onViewProfile }: any) {
           muted={isMuted}
           playsInline
           referrerPolicy="no-referrer"
+          onPlay={() => {
+            setIsPlaying(true);
+            setShowControls(false);
+          }}
+          onPause={() => {
+            setIsPlaying(false);
+            setShowControls(true);
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40" />
+        
+        {/* Play/Pause/Skip Controls Overlay */}
+        <AnimatePresence>
+          {showControls && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="absolute inset-0 flex items-center justify-center gap-8 z-10 pointer-events-none"
+            >
+              <button 
+                onClick={skipBackward}
+                className="w-12 h-12 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/40 transition-all pointer-events-auto border border-white/10"
+              >
+                <div className="relative flex items-center justify-center">
+                  <RotateCcw size={24} />
+                  <span className="absolute text-[8px] font-bold mt-[2px]">10</span>
+                </div>
+              </button>
+
+              <button 
+                onClick={togglePlay}
+                className="w-16 h-16 rounded-full bg-black/20 backdrop-blur-md border-2 border-white/20 flex items-center justify-center text-white hover:scale-110 transition-all pointer-events-auto"
+              >
+                {isPlaying ? <Pause size={32} fill="white" /> : <Play size={32} fill="white" className="ml-1" />}
+              </button>
+
+              <button 
+                onClick={skipForward}
+                className="w-12 h-12 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/40 transition-all pointer-events-auto border border-white/10"
+              >
+                <div className="relative flex items-center justify-center">
+                  <RotateCw size={24} />
+                  <span className="absolute text-[8px] font-bold mt-[2px]">10</span>
+                </div>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Sound Toggle */}
@@ -3097,7 +3919,7 @@ function ReelItem({ reel, isActive, profile, onRemove, onViewProfile }: any) {
         </div>
 
         <div className="flex flex-col gap-6 items-center">
-          {profile?.account_type === 'admin' && (
+          {(profile?.account_type === 'admin' || profile?.id === reel.user_id) && (
             <button 
               onClick={() => onRemove(reel.id)}
               className="w-12 h-12 rounded-full bg-red-500/20 backdrop-blur-md flex items-center justify-center text-red-500 hover:bg-red-500 transition-colors"
@@ -3112,16 +3934,37 @@ function ReelItem({ reel, isActive, profile, onRemove, onViewProfile }: any) {
             >
               <Heart size={28} fill={isLiked ? "currentColor" : "none"} />
             </button>
-            <span className="text-[10px] font-bold text-white">{likesCount}</span>
+            <span className="text-xs font-bold text-white drop-shadow-lg">
+              {likesCount >= 1000 ? `${(likesCount / 1000).toFixed(1)}K` : likesCount}
+            </span>
           </div>
           <div className="flex flex-col items-center gap-1">
-            <button className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-fashion-gold transition-colors">
+            <button 
+              onClick={() => onComment(reel.id)}
+              className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-fashion-gold transition-colors"
+            >
               <MessageCircle size={28} />
             </button>
-            <span className="text-[10px] font-bold text-white">24</span>
+            <span className="text-xs font-bold text-white drop-shadow-lg">
+              {commentsCount >= 1000 ? `${(commentsCount / 1000).toFixed(1)}K` : commentsCount}
+            </span>
           </div>
-          <button className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-fashion-gold transition-colors">
-            <Share2 size={28} />
+          <div className="flex flex-col items-center gap-1">
+            <button 
+              onClick={handleShare}
+              className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-fashion-gold transition-colors"
+            >
+              <Share2 size={28} />
+            </button>
+            <span className="text-xs font-bold text-white drop-shadow-lg">
+              {sharesCount >= 1000 ? `${(sharesCount / 1000).toFixed(1)}K` : sharesCount}
+            </span>
+          </div>
+          <button 
+            onClick={handleDownload}
+            className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:text-fashion-gold transition-colors"
+          >
+            <Download size={28} />
           </button>
           <div className="w-10 h-10 rounded-full gold-gradient p-[2px] animate-spin-slow">
             <div className="w-full h-full rounded-full bg-fashion-black flex items-center justify-center">
@@ -3138,6 +3981,7 @@ const Reels = ({ profile, onViewProfile }: { profile: Profile | null, onViewProf
   const [reels, setReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [activeCommentReel, setActiveCommentReel] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchReels = async () => {
@@ -3166,6 +4010,9 @@ const Reels = ({ profile, onViewProfile }: { profile: Profile | null, onViewProf
             return [newReel, ...prev];
           });
         }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'reels' }, (payload) => {
+        setReels(prev => prev.filter(r => r.id !== payload.old.id));
       })
       .subscribe();
 
@@ -3218,6 +4065,15 @@ const Reels = ({ profile, onViewProfile }: { profile: Profile | null, onViewProf
       onScroll={handleScroll}
       className="h-[calc(100vh-70px)] bg-black snap-y snap-mandatory overflow-y-auto scrollbar-hide"
     >
+      <AnimatePresence>
+        {activeCommentReel && (
+          <CommentModal 
+            reelId={activeCommentReel} 
+            onClose={() => setActiveCommentReel(null)} 
+          />
+        )}
+      </AnimatePresence>
+
       {reels.length === 0 ? (
         <div className="h-full flex flex-col items-center justify-center text-zinc-500 p-10 text-center">
           <Video size={64} className="mb-4 opacity-20" />
@@ -3232,6 +4088,7 @@ const Reels = ({ profile, onViewProfile }: { profile: Profile | null, onViewProf
           profile={profile}
           onRemove={handleRemove}
           onViewProfile={onViewProfile}
+          onComment={(id: string) => setActiveCommentReel(id)}
         />
       ))}
     </div>
@@ -3266,7 +4123,13 @@ const PremiumOverlay = ({ onUpgrade }: { onUpgrade: () => void }) => (
   </motion.div>
 );
 
-const SettingsView = ({ profile, setProfile, onTabChange, onShowTerms }: { profile: Profile | null, setProfile: (p: Profile | null) => void, onTabChange: (tab: string) => void, onShowTerms: () => void }) => {
+const SettingsView = ({ profile, setProfile, onTabChange, onShowTerms, addToast }: { 
+  profile: Profile | null, 
+  setProfile: (p: Profile | null) => void, 
+  onTabChange: (tab: string) => void, 
+  onShowTerms: () => void,
+  addToast: (msg: string) => void
+}) => {
   const [adminExists, setAdminExists] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -3283,10 +4146,12 @@ const SettingsView = ({ profile, setProfile, onTabChange, onShowTerms }: { profi
 
   const updatePrivacy = async (key: string, value: boolean) => {
     if (!profile) return;
+    setLoading(true);
     
     // Optimistic update
     const previousProfile = { ...profile };
-    setProfile({ ...profile, [key]: value });
+    const updatedProfile = { ...profile, [key]: value };
+    setProfile(updatedProfile);
 
     try {
       const { error } = await supabase
@@ -3295,10 +4160,14 @@ const SettingsView = ({ profile, setProfile, onTabChange, onShowTerms }: { profi
         .eq('id', profile.id);
       
       if (error) throw error;
+      addToast('Configuração atualizada com sucesso! ✨');
     } catch (error: any) {
+      console.error('Error updating privacy:', error);
       // Rollback on error
       setProfile(previousProfile);
-      alert('Erro ao atualizar: ' + error.message);
+      addToast('Erro ao atualizar: ' + (error.message || 'Falha na conexão'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -3435,17 +4304,32 @@ const SettingsView = ({ profile, setProfile, onTabChange, onShowTerms }: { profi
               <Bell size={18} className="text-zinc-500" />
               <div className="flex flex-col">
                 <span className="text-sm">Notificações</span>
-                <span className="text-[10px] text-zinc-500">{profile?.notifications_enabled ? 'Ligado' : 'Desligado'}</span>
+                <span className="text-[10px] text-zinc-500">{!!profile?.notifications_enabled ? 'Ligado' : 'Desligado'}</span>
               </div>
             </div>
             <button 
+              disabled={loading}
               onClick={() => updatePrivacy('notifications_enabled', !profile?.notifications_enabled)}
-              className={`w-10 h-5 rounded-full transition-all relative ${profile?.notifications_enabled ? 'bg-fashion-gold' : 'bg-zinc-700'}`}
+              className={`w-10 h-5 rounded-full transition-all relative ${!!profile?.notifications_enabled ? 'bg-fashion-gold' : 'bg-zinc-700'} ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${profile?.notifications_enabled ? 'right-1' : 'left-1'}`} />
+              <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${!!profile?.notifications_enabled ? 'right-1' : 'left-1'}`} />
             </button>
           </div>
         </div>
+        
+        {!!profile?.notifications_enabled && (
+          <button 
+            onClick={() => {
+              playSound('notification');
+              addToast('Teste de notificação bem-sucedido! 🔔');
+            }}
+            className="w-full bg-fashion-gold/10 text-fashion-gold p-4 rounded-2xl flex items-center justify-center gap-2 font-medium border border-fashion-gold/20 hover:bg-fashion-gold/20 transition-all"
+          >
+            <Bell size={18} />
+            Testar Notificações
+          </button>
+        )}
+
         <button 
           onClick={() => supabase.auth.signOut()}
           className="w-full bg-red-500/10 text-red-500 p-4 rounded-2xl flex items-center justify-center gap-2 font-bold"
@@ -3670,12 +4554,24 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const profileRef = useRef<Profile | null>(null);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
   const [activeTab, setActiveTab] = useState('feed');
   const [selectedChatUser, setSelectedChatUser] = useState<Profile | null>(null);
   const [viewingProfile, setViewingProfile] = useState<Profile | null>(null);
   const [calling, setCalling] = useState(false);
+  const [callType, setCallType] = useState<'voice' | 'video'>('voice');
+  const [callRecipient, setCallRecipient] = useState<Profile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [hasNewFeed, setHasNewFeed] = useState(false);
+  const [hasNewReels, setHasNewReels] = useState(false);
+  const [hasNewGlobal, setHasNewGlobal] = useState(false);
+  const [hasNewChat, setHasNewChat] = useState(false);
+  const [hasNewMembers, setHasNewMembers] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [toasts, setToasts] = useState<{ id: string, message: string }[]>([]);
 
@@ -3685,6 +4581,16 @@ export default function App() {
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 5000);
+  };
+
+  const fetchUnreadNotifications = async () => {
+    if (!session?.user) return;
+    const { count } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', session.user.id)
+      .eq('is_read', false);
+    setUnreadNotifications(count || 0);
   };
 
   useEffect(() => {
@@ -3731,15 +4637,7 @@ export default function App() {
       const interval = setInterval(updateOnlineStatus, 30000); // Every 30s
 
       // Fetch unread notifications
-      const fetchUnread = async () => {
-        const { count } = await supabase
-          .from('notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', session.user.id)
-          .eq('is_read', false);
-        setUnreadNotifications(count || 0);
-      };
-      fetchUnread();
+      fetchUnreadNotifications();
 
       // Real-time profile updates
       const profileSub = supabase
@@ -3750,7 +4648,9 @@ export default function App() {
           table: 'profiles', 
           filter: `id=eq.${session.user.id}` 
         }, payload => {
-          setProfile(payload.new as Profile);
+          if (payload.new) {
+            setProfile(prev => prev ? { ...prev, ...payload.new } : (payload.new as Profile));
+          }
         })
         .subscribe();
 
@@ -3765,16 +4665,74 @@ export default function App() {
         }, (payload) => {
           setUnreadNotifications(prev => prev + 1);
           const newNotif = payload.new as Notification;
-          if (profile?.notifications_enabled) {
+          if (profileRef.current?.notifications_enabled) {
             playSound('notification');
             addToast(newNotif.content);
           }
         })
         .subscribe();
 
+      // Real-time activity tracking
+      const activitySub = supabase
+        .channel('global-activity')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, async (payload) => {
+          if (activeTab !== 'feed') setHasNewFeed(true);
+          
+          // Notify followers
+          const authorId = payload.new.user_id;
+          if (authorId !== session.user.id) {
+            const { data: followers } = await supabase.from('follows').select('follower_id').eq('following_id', authorId);
+            if (followers) {
+              const { data: author } = await supabase.from('profiles').select('username').eq('id', authorId).single();
+              for (const f of followers) {
+                await createNotification(f.follower_id, 'system', `@${author?.username} publicou um novo post!`, 'feed');
+              }
+            }
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reels' }, async (payload) => {
+          if (activeTab !== 'reels') setHasNewReels(true);
+
+          // Notify followers
+          const authorId = payload.new.user_id;
+          if (authorId !== session.user.id) {
+            const { data: followers } = await supabase.from('follows').select('follower_id').eq('following_id', authorId);
+            if (followers) {
+              const { data: author } = await supabase.from('profiles').select('username').eq('id', authorId).single();
+              for (const f of followers) {
+                await createNotification(f.follower_id, 'system', `@${author?.username} publicou um novo Reel!`, 'reels');
+              }
+            }
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+          const msg = payload.new as Message;
+          if (!msg.receiver_id) {
+            if (activeTab !== 'global-chat') setHasNewGlobal(true);
+          } else if (msg.receiver_id === session.user.id) {
+            if (activeTab !== 'chat') setHasNewChat(true);
+          }
+          
+          if (profileRef.current?.notifications_enabled && (msg.receiver_id === session.user.id || !msg.receiver_id)) {
+            if (msg.sender_id !== session.user.id) {
+              playSound('message');
+              if (msg.receiver_id) {
+                addToast("Nova mensagem recebida!");
+              } else {
+                addToast("Nova mensagem no chat global!");
+              }
+            }
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, () => {
+          if (activeTab !== 'members') setHasNewMembers(true);
+        })
+        .subscribe();
+
       return () => {
         profileSub.unsubscribe();
         notifSub.unsubscribe();
+        activitySub.unsubscribe();
         clearInterval(interval);
       };
     }
@@ -3800,10 +4758,60 @@ export default function App() {
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
+    if (tab === 'feed') setHasNewFeed(false);
+    if (tab === 'reels') setHasNewReels(false);
+    if (tab === 'chat') {
+      setHasNewChat(false);
+      setSelectedChatUser(null);
+    }
+    if (tab === 'members') setHasNewMembers(false);
+    if (tab === 'global-chat') setHasNewGlobal(false);
+    
+    if (tab !== 'chat') {
+      setSelectedChatUser(null);
+    }
   };
 
-  const handleCall = () => {
+  const handleNavigate = async (tab: string, data?: any) => {
+    if (tab === 'chat' && data) {
+      setSelectedChatUser(data);
+      setActiveTab('chat');
+    } else if (tab === 'other-profile' && data) {
+      setViewingProfile(data);
+      setActiveTab('other-profile');
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
+  const handleCall = async (type: 'voice' | 'video', recipient: Profile | null) => {
+    if (!recipient || !profile) return;
+
+    setCallType(type);
+    setCallRecipient(recipient);
     setCalling(true);
+
+    // Check if recipient is online (within last 2 minutes for better reliability)
+    const lastSeen = recipient.last_seen ? new Date(recipient.last_seen).getTime() : 0;
+    const isOnline = recipient.show_online && (new Date().getTime() - lastSeen < 120000);
+    
+    if (!isOnline) {
+      // Create missed call notification
+      try {
+        const { error } = await supabase.from('notifications').insert({
+          user_id: recipient.id,
+          type: 'system',
+          content: `Chamada de ${type === 'voice' ? 'voz' : 'vídeo'} perdida de @${profile.username}`,
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+        
+        if (error) throw error;
+        console.log('Missed call notification sent successfully');
+      } catch (err) {
+        console.error('Error sending missed call notification:', err);
+      }
+    }
   };
 
   if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
@@ -3824,7 +4832,7 @@ export default function App() {
             onClose={() => setToasts(prev => prev.filter(t => t.id !== toast.id))} 
           />
         ))}
-        {calling && <VideoCall onEnd={() => setCalling(false)} />}
+        {calling && <VideoCall type={callType} recipient={callRecipient} onEnd={() => setCalling(false)} addToast={addToast} profile={profile} />}
         {showTerms && <TermsAndPrivacy onClose={() => setShowTerms(false)} />}
       </AnimatePresence>
 
@@ -3877,16 +4885,18 @@ export default function App() {
               profile={profile} 
               recipient={selectedChatUser}
               onCall={handleCall} 
+              addToast={addToast}
+              onNavigate={handleNavigate}
             />
           )}
           {activeTab === 'ranking' && <Ranking />}
           {activeTab === 'premium' && <PremiumForm onComplete={() => setActiveTab('feed')} />}
           {activeTab === 'admin' && <AdminPanel />}
-          {activeTab === 'settings' && <SettingsView profile={profile} setProfile={setProfile} onTabChange={handleTabChange} onShowTerms={() => setShowTerms(true)} />}
+          {activeTab === 'settings' && <SettingsView profile={profile} setProfile={setProfile} onTabChange={handleTabChange} onShowTerms={() => setShowTerms(true)} addToast={addToast} />}
           {activeTab === 'profile-edit' && <ProfileEdit profile={profile} onComplete={() => handleTabChange('settings')} />}
           {activeTab === 'create' && <CreatePost onComplete={() => handleTabChange('feed')} />}
           {activeTab === 'search' && <SearchView profile={profile} />}
-          {activeTab === 'notifications' && <NotificationsView profile={profile} />}
+          {activeTab === 'notifications' && <NotificationsView profile={profile} onNavigate={handleNavigate} onRead={fetchUnreadNotifications} />}
           {activeTab === 'members' && <MembersView profile={profile} onSelectUser={(p) => {
             setSelectedChatUser(p);
             setActiveTab('chat');
@@ -3908,9 +4918,10 @@ export default function App() {
               handleTabChange('feed');
               setSelectedChatUser(null);
             }}
-            className={`flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'feed' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
+            className={`relative flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'feed' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
           >
             <Home size={20} />
+            {hasNewFeed && <div className="absolute top-1 right-2 w-2 h-2 bg-fashion-gold rounded-full border border-fashion-black" />}
             <span className="text-[8px] font-bold uppercase tracking-tighter">Feed</span>
           </button>
           <button 
@@ -3918,9 +4929,10 @@ export default function App() {
               handleTabChange('reels');
               setSelectedChatUser(null);
             }}
-            className={`flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'reels' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
+            className={`relative flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'reels' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
           >
             <Video size={20} />
+            {hasNewReels && <div className="absolute top-1 right-2 w-2 h-2 bg-fashion-gold rounded-full border border-fashion-black" />}
             <span className="text-[8px] font-bold uppercase tracking-tighter">Reels</span>
           </button>
           <button 
@@ -3928,9 +4940,10 @@ export default function App() {
               handleTabChange('members');
               setSelectedChatUser(null);
             }}
-            className={`flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'members' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
+            className={`relative flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'members' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
           >
             <Users size={20} />
+            {hasNewMembers && <div className="absolute top-1 right-2 w-2 h-2 bg-fashion-gold rounded-full border border-fashion-black" />}
             <span className="text-[8px] font-bold uppercase tracking-tighter">Membros</span>
           </button>
           
@@ -3951,9 +4964,10 @@ export default function App() {
               handleTabChange('global-chat');
               setSelectedChatUser(null);
             }}
-            className={`flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'global-chat' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
+            className={`relative flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'global-chat' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
           >
             <MessageSquare size={20} />
+            {hasNewGlobal && <div className="absolute top-1 right-2 w-2 h-2 bg-fashion-gold rounded-full border border-fashion-black" />}
             <span className="text-[8px] font-bold uppercase tracking-tighter">Global</span>
           </button>
           <button 
@@ -3971,9 +4985,10 @@ export default function App() {
               handleTabChange('chat');
               setSelectedChatUser(null);
             }}
-            className={`flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'chat' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
+            className={`relative flex-shrink-0 p-2 transition-all flex flex-col items-center gap-1 ${activeTab === 'chat' ? 'text-fashion-gold scale-110' : 'text-zinc-600'}`}
           >
             <MessageCircle size={20} />
+            {hasNewChat && <div className="absolute top-1 right-2 w-2 h-2 bg-fashion-gold rounded-full border border-fashion-black" />}
             <span className="text-[8px] font-bold uppercase tracking-tighter">Chat</span>
           </button>
           <button 

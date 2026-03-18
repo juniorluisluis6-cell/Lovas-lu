@@ -66,6 +66,8 @@ export interface Reel {
   caption: string | null;
   music_name: string | null;
   likes_count: number;
+  comments_count?: number;
+  shares_count?: number;
   created_at: string;
   profiles?: Profile;
 }
@@ -99,13 +101,14 @@ export interface Story {
 export interface Message {
   id: string;
   sender_id: string;
-  receiver_id: string;
+  receiver_id: string | null;
   content: string | null;
   type: 'text' | 'audio' | 'photo' | 'video' | 'document';
   media_url: string | null;
   is_read: boolean;
   created_at: string;
   sender?: Profile;
+  receiver?: Profile;
 }
 
 export interface Follow {
